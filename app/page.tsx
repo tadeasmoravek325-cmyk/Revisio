@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const totalQuestions = data.questions.length;
   const studiedQuestions = getStudiedQuestionCount(data);
   const averageStudyTimePerDay = getAverageStudyMinutesPerDay(data);
+  const sessionsNeedingReview = data.sessions.filter((session) => session.needsReview || !session.questionId).length;
   const recommendedQuestions = getRecommendedQuestions(5).map((question) => ({
     question,
     daysSinceLastSeen: getDaysSinceLastSeen(question.id),
@@ -67,10 +68,23 @@ export default function DashboardPage() {
         </button>
       </PageHeader>
 
+      <div className="mb-5 flex items-center gap-3 rounded-lg border border-blue-100 bg-white/90 p-4 shadow-soft dark:border-blue-500/20 dark:bg-slate-900/75">
+        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: data.color ?? "#2563eb" }} />
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+            Active workspace
+          </p>
+          <h2 className="text-xl font-black text-slate-950 dark:text-slate-50">{data.name}</h2>
+          {data.description ? (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{data.description}</p>
+          ) : null}
+        </div>
+      </div>
+
       <section className="panel mb-5 overflow-hidden p-5 sm:p-6">
         <div className="grid gap-5 lg:grid-cols-[1fr_320px] lg:items-center">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
               Next best move
             </p>
             <h2 className="mt-3 max-w-2xl text-2xl font-black leading-tight text-slate-950 dark:text-slate-50 sm:text-3xl">
@@ -83,13 +97,13 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg bg-slate-950 p-4 text-white dark:bg-teal-400 dark:text-slate-950">
+            <div className="rounded-lg bg-blue-600 p-4 text-white dark:bg-blue-500">
               <p className="text-xs font-bold uppercase tracking-[0.12em] opacity-70">Progress</p>
               <p className="mt-2 text-3xl font-black">
                 {Math.round((studiedQuestions / (totalQuestions || 1)) * 100)}%
               </p>
             </div>
-            <div className="rounded-lg bg-teal-50 p-4 text-teal-950 dark:bg-slate-800 dark:text-teal-100">
+            <div className="rounded-lg bg-blue-50 p-4 text-blue-950 dark:bg-blue-500/10 dark:text-blue-100">
               <p className="text-xs font-bold uppercase tracking-[0.12em] opacity-70">Today</p>
               <p className="mt-2 text-3xl font-black">{todayStudyTime}</p>
               <p className="text-sm font-semibold opacity-70">minutes</p>
@@ -135,9 +149,9 @@ export default function DashboardPage() {
           detail="Since first tracked question"
         />
         <DashboardStatCard
-          label="Recommended"
-          value={`${recommendedQuestions.length}`}
-          detail="Highest priority now"
+          label="Needs review"
+          value={`${sessionsNeedingReview}`}
+          detail="Sessions need review"
         />
       </div>
 

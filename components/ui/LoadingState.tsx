@@ -1,8 +1,13 @@
+import Image from "next/image";
+
 export function LoadingState({ label = "Loading study data" }: { label?: string }) {
   return (
     <div className="space-y-4">
       <div className="panel p-5">
-        <p className="text-sm font-black uppercase tracking-[0.12em] text-teal-700 dark:text-teal-300">{label}</p>
+        <div className="flex items-center gap-3">
+          <Image src="/revisio-icon.svg" alt="Revisio" width={32} height={32} className="h-8 w-8 rounded-md" />
+          <p className="text-sm font-black uppercase tracking-[0.12em] text-blue-700 dark:text-blue-300">{label}</p>
+        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="rounded-lg border border-slate-100 p-4 dark:border-slate-800">

@@ -1,11 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { navItems } from "@/lib/navigation";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { useToast } from "@/components/ui/ToastProvider";
+import { WorkspaceSwitcher } from "@/components/workspaces/WorkspaceSwitcher";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
@@ -59,22 +61,31 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/80 px-4 py-5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
-        <Link href="/" className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 transition hover:bg-slate-100 dark:hover:bg-slate-900">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-slate-950 text-sm font-black text-white dark:bg-teal-400 dark:text-slate-950">
-            R
-          </span>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/90 px-4 py-5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
+        <Link href="/" className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
+          <Image
+            src="/revisio-icon.svg"
+            alt="Revisio"
+            width={62}
+            height={62}
+            priority
+            className="h-[62px] w-[62px] shrink-0 rounded-xl"
+          />
           <span className="min-w-0">
-            <span className="block truncate text-base font-black text-slate-950 dark:text-slate-50">
+            <span className="block truncate text-2xl font-semibold leading-none tracking-normal text-slate-950 dark:text-slate-50">
               Revisio
             </span>
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
               Final exam preparation
             </span>
           </span>
         </Link>
 
-        <nav className="mt-8 space-y-1">
+        <div className="mt-5">
+          <WorkspaceSwitcher />
+        </div>
+
+        <nav className="mt-6 space-y-1">
           {navItems.map((item) => {
             const active = pathname === item.href;
             return (
@@ -83,8 +94,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 className={`group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-bold transition ${
                   active
-                    ? "bg-slate-950 text-white dark:bg-teal-400 dark:text-slate-950"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-900/10 dark:bg-blue-500 dark:text-white"
+                    : "text-slate-600 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-100"
                 }`}
               >
                 <span>{item.label}</span>
@@ -106,14 +117,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:hidden">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-950 text-sm font-black text-white dark:bg-teal-400 dark:text-slate-950">
-              R
-            </span>
+            <Image src="/revisio-icon.svg" alt="Revisio" width={56} height={56} priority className="h-[56px] w-[56px] shrink-0 rounded-xl" />
             <span className="min-w-0">
-              <span className="block truncate text-base font-black text-slate-950 dark:text-slate-50">
+              <span className="block truncate text-xl font-semibold leading-none tracking-normal text-slate-950 dark:text-slate-50">
                 Revisio
               </span>
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -124,6 +133,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button className="btn-secondary px-3" onClick={toggleTheme} aria-label="Toggle color theme">
             {theme === "dark" ? "Light" : "Dark"}
           </button>
+        </div>
+        <div className="px-4 pb-3">
+          <WorkspaceSwitcher compact />
         </div>
       </header>
 
@@ -141,8 +153,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 className={`rounded-lg px-1 py-2 text-center text-[11px] font-black transition ${
                   active
-                    ? "bg-slate-950 text-white dark:bg-teal-400 dark:text-slate-950"
-                    : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900"
+                    ? "bg-blue-600 text-white dark:bg-blue-500"
+                    : "text-slate-500 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-400 dark:hover:bg-blue-500/10 dark:hover:text-blue-100"
                 }`}
               >
                 <span className="block">{item.shortLabel}</span>
@@ -166,14 +178,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="mt-5 space-y-2">
               {navItems.map((item) => (
-                <div key={item.href} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800/70">
+                <div key={item.href} className="flex items-center justify-between rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-500/10">
                   <span className="font-semibold text-slate-700 dark:text-slate-200">{item.label}</span>
-                  <span className="rounded-md bg-white px-2 py-1 font-black text-slate-900 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-100 dark:ring-slate-700">{item.shortcut}</span>
+                  <span className="rounded-md bg-white px-2 py-1 font-black text-blue-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-blue-200 dark:ring-blue-500/30">{item.shortcut}</span>
                 </div>
               ))}
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800/70">
+              <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-500/10">
                 <span className="font-semibold text-slate-700 dark:text-slate-200">Toggle theme</span>
-                <span className="rounded-md bg-white px-2 py-1 font-black text-slate-900 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-100 dark:ring-slate-700">M</span>
+                <span className="rounded-md bg-white px-2 py-1 font-black text-blue-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-blue-200 dark:ring-blue-500/30">M</span>
               </div>
             </div>
           </div>

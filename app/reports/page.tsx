@@ -29,7 +29,9 @@ import { addDays, toDateInputValue } from "@/utils/date";
 import {
   getAverageStudyMinutesPerDay,
   getDaysSinceLastSeen,
+  getLastSeen,
   getReviewCount,
+  getStudiedQuestionCount,
   getTotalStudyMinutes,
   getTotalTimeForQuestion
 } from "@/utils/studyMetrics";
@@ -45,10 +47,50 @@ type SubjectChartItem = {
   color: string;
 };
 
+type QuestionChartItem = {
+  id: string;
+  label: string;
+  title: string;
+  questionNumber: number;
+  subject: string;
+  subjectAbbreviation: string;
+  minutes: number;
+  reviewCount: number;
+  lastSeen?: string;
+  daysSinceLastSeen?: number;
+};
+
+type QuestionLimit = "8" | "15" | "all";
+type QuestionView = "chart" | "table";
+
 function formatShortDate(dateValue: string) {
   return new Date(`${dateValue}T12:00:00`).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric"
+  });
+}
+
+function formatLastReviewed(value?: string, daysSinceLastSeen?: number) {
+  if (!value) {
+    return "Never";
+  }
+
+  if (daysSinceLastSeen === 0) {
+    return "Today";
+  }
+
+  if (daysSinceLastSeen === 1) {
+    return "1 day ago";
+  }
+
+  if (daysSinceLastSeen !== undefined) {
+    return `${daysSinceLastSeen} days ago`;
+  }
+
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
   });
 }
 
@@ -143,10 +185,43 @@ function SubjectStudyTooltip({
   );
 }
 
+function QuestionStudyTooltip({
+  active,
+  payload
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: QuestionChartItem }>;
+}) {
+  const item = payload?.[0]?.payload;
+
+  if (!active || !item) {
+    return null;
+  }
+
+  return (
+    <div className="max-w-xs rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-soft dark:border-slate-700 dark:bg-slate-900">
+      <p className="font-black text-slate-950 dark:text-slate-50">{item.subject}</p>
+      <p className="mt-1 font-semibold text-slate-500 dark:text-slate-400">
+        {item.subjectAbbreviation} · Question {item.questionNumber}
+      </p>
+      <p className="mt-3 font-bold text-slate-900 dark:text-slate-100">
+        Question {item.questionNumber}: {item.title}
+      </p>
+      <div className="mt-3 space-y-1 font-semibold text-slate-600 dark:text-slate-300">
+        <p>Study time: {item.minutes} min</p>
+        <p>Review count: {item.reviewCount}</p>
+        <p>Last reviewed: {formatLastReviewed(item.lastSeen, item.daysSinceLastSeen)}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const { data, getDaysSinceLastSeen: daysSinceLastSeen, hydrated, resetDemoData } = useStudyStore();
   const { showToast } = useToast();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [questionLimit, setQuestionLimit] = useState<QuestionLimit>("8");
+  const [questionView, setQuestionView] = useState<QuestionView>("chart");
   const totalMinutes = getTotalStudyMinutes(data.sessions);
   const averageDailyMinutes = getAverageStudyMinutesPerDay(data);
   const streaks = getStudyStreaks(data.sessions);
@@ -157,7 +232,7 @@ export default function ReportsPage() {
       .filter((question) => question.subjectId === subject.id)
       .map((question) => question.id);
     const minutes = data.sessions
-      .filter((session) => questionIds.includes(session.questionId))
+      .filter((session) => !session.needsReview && session.questionId && questionIds.includes(session.questionId))
       .reduce((sum, session) => sum + session.durationMinutes, 0);
 
     return {
@@ -169,15 +244,30 @@ export default function ReportsPage() {
     };
   });
 
-  const questionData = data.questions
-    .map((question) => ({
-      id: question.id,
-      name: `${question.number}. ${question.title}`,
-      shortName: `${question.number}. ${question.title.slice(0, 22)}${question.title.length > 22 ? "..." : ""}`,
-      minutes: getTotalTimeForQuestion(data, question.id)
-    }))
-    .sort((a, b) => b.minutes - a.minutes)
-    .slice(0, 8);
+  const allQuestionData = data.questions
+    .map((question) => {
+      const subject = data.subjects.find((item) => item.id === question.subjectId);
+      const subjectAbbreviation = subject?.abbreviation ?? "SUB";
+      return {
+        id: question.id,
+        label: `${subjectAbbreviation} ${question.number}`,
+        title: question.title,
+        questionNumber: question.number,
+        subject: subject?.name ?? "No subject",
+        subjectAbbreviation,
+        minutes: getTotalTimeForQuestion(data, question.id),
+        reviewCount: getReviewCount(data, question.id),
+        lastSeen: getLastSeen(data, question.id),
+        daysSinceLastSeen: getDaysSinceLastSeen(data, question.id)
+      };
+    })
+    .sort((a, b) => b.minutes - a.minutes);
+
+  const questionData =
+    questionLimit === "all"
+      ? allQuestionData
+      : allQuestionData.slice(0, Number(questionLimit));
+  const questionChartWidth = Math.max(520, questionData.length * 72);
 
   const neglectedQuestions = getNeglectedQuestions(data.questions, daysSinceLastSeen);
   const hardestQuestions = [...data.questions]
@@ -207,7 +297,7 @@ export default function ReportsPage() {
         <MetricCard label="Total study" value={`${totalMinutes} min`} detail={`${data.sessions.length} sessions logged`} />
         <MetricCard label="Daily average" value={`${averageDailyMinutes} min`} detail="Across your preparation history" />
         <MetricCard label="Current streak" value={`${streaks.current} days`} detail={`Longest streak: ${streaks.longest} days`} />
-        <MetricCard label="Studied questions" value={`${data.questions.filter((question) => question.reviewCount > 0).length}/${data.questions.length}`} detail="Questions with at least one review" />
+        <MetricCard label="Studied questions" value={`${getStudiedQuestionCount(data)}/${data.questions.length}`} detail="Questions with at least one review" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -217,15 +307,15 @@ export default function ReportsPage() {
               <AreaChart data={dailyData} margin={{ left: -18, right: 8, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dailyStudyGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#0f766e" stopOpacity={0.34} />
-                    <stop offset="95%" stopColor="#0f766e" stopOpacity={0.03} />
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.03} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={chartGridColor} vertical={false} />
                 <XAxis dataKey="day" tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
                 <Tooltip />
-                <Area type="monotone" dataKey="minutes" stroke="#0f766e" strokeWidth={3} fill="url(#dailyStudyGradient)" />
+                <Area type="monotone" dataKey="minutes" stroke="#2563eb" strokeWidth={3} fill="url(#dailyStudyGradient)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -244,7 +334,7 @@ export default function ReportsPage() {
               <p className="text-sm text-slate-500 dark:text-slate-400">days</p>
             </div>
           </div>
-          <div className="mt-4 rounded-lg bg-teal-50 p-4 text-sm font-semibold text-teal-900 dark:bg-teal-500/15 dark:text-teal-100">
+          <div className="mt-4 rounded-lg bg-blue-50 p-4 text-sm font-semibold text-blue-900 dark:bg-blue-500/15 dark:text-blue-100">
             Average daily study time is {averageDailyMinutes} minutes.
           </div>
         </ReportCard>
@@ -271,17 +361,116 @@ export default function ReportsPage() {
         </ReportCard>
 
         <ReportCard title="Study time by question" detail="Most practiced questions">
-          <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={questionData} margin={{ left: -16, right: 8, top: 4, bottom: 32 }}>
-                <CartesianGrid stroke={chartGridColor} vertical={false} />
-                <XAxis dataKey="shortName" tick={{ fill: chartTextColor, fontSize: 11 }} tickLine={false} axisLine={false} angle={-20} textAnchor="end" height={58} />
-                <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Bar dataKey="minutes" fill="#2563eb" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1 text-sm font-bold dark:border-slate-700 dark:bg-slate-950">
+              <button
+                className={`rounded-md px-3 py-1.5 transition ${
+                  questionView === "chart"
+                    ? "bg-blue-600 text-white dark:bg-blue-500"
+                    : "text-slate-600 dark:text-slate-300"
+                }`}
+                onClick={() => setQuestionView("chart")}
+              >
+                Chart view
+              </button>
+              <button
+                className={`rounded-md px-3 py-1.5 transition ${
+                  questionView === "table"
+                    ? "bg-blue-600 text-white dark:bg-blue-500"
+                    : "text-slate-600 dark:text-slate-300"
+                }`}
+                onClick={() => setQuestionView("table")}
+              >
+                Table view
+              </button>
+            </div>
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Show
+              <select
+                className="field ml-2 w-auto py-1.5"
+                value={questionLimit}
+                onChange={(event) => setQuestionLimit(event.target.value as QuestionLimit)}
+              >
+                <option value="8">Top 8</option>
+                <option value="15">Top 15</option>
+                <option value="all">All</option>
+              </select>
+            </label>
           </div>
+
+          {questionView === "chart" ? (
+            <div className="overflow-x-auto pb-2">
+              <div className="h-[340px]" style={{ minWidth: questionChartWidth }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={questionData} margin={{ left: -8, right: 18, top: 28, bottom: 24 }}>
+                    <CartesianGrid stroke={chartGridColor} vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: chartTextColor, fontSize: 13, fontWeight: 800 }}
+                      tickLine={false}
+                      axisLine={false}
+                      angle={questionData.length > 10 ? -25 : 0}
+                      textAnchor={questionData.length > 10 ? "end" : "middle"}
+                      height={questionData.length > 10 ? 58 : 38}
+                    />
+                    <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
+                    <Tooltip content={<QuestionStudyTooltip />} />
+                    <Bar dataKey="minutes" fill="#2563eb" radius={[8, 8, 0, 0]}>
+                      <LabelList
+                        dataKey="minutes"
+                        position="top"
+                        formatter={(value) => `${value ?? 0} min`}
+                        fill={chartTextColor}
+                        fontSize={12}
+                        fontWeight={800}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs font-black uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    <th className="py-3 pr-3">Label</th>
+                    <th className="py-3 pr-3">Question</th>
+                    <th className="py-3 pr-3">Subject</th>
+                    <th className="py-3 pr-3">Study time</th>
+                    <th className="py-3 pr-3">Reviews</th>
+                    <th className="py-3">Last reviewed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {questionData.map((item) => (
+                    <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800">
+                      <td className="py-3 pr-3">
+                        <span className="rounded-md bg-slate-100 px-2 py-1 font-black text-slate-900 dark:bg-slate-800 dark:text-slate-100">
+                          {item.label}
+                        </span>
+                      </td>
+                      <td className="max-w-[280px] py-3 pr-3 font-semibold text-slate-900 dark:text-slate-100">
+                        {item.title}
+                      </td>
+                      <td className="py-3 pr-3 text-slate-600 dark:text-slate-300">
+                        {item.subject}
+                      </td>
+                      <td className="py-3 pr-3 font-black text-slate-950 dark:text-slate-50">
+                        {item.minutes} min
+                      </td>
+                      <td className="py-3 pr-3 text-slate-600 dark:text-slate-300">
+                        {item.reviewCount}
+                      </td>
+                      <td className="py-3 text-slate-600 dark:text-slate-300">
+                        {formatLastReviewed(item.lastSeen, item.daysSinceLastSeen)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </ReportCard>
       </div>
 

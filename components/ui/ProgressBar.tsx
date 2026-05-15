@@ -1,6 +1,6 @@
 export function ProgressBar({
   value,
-  color = "#2f9e8f"
+  color = "#2563eb"
 }: {
   value: number;
   color?: string;

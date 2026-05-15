@@ -26,7 +26,7 @@ import { SubjectPill } from "./SubjectPill";
 const statusOptions: QuestionStatus[] = ["unknown", "partial", "known"];
 const difficultyOptions: Difficulty[] = ["easy", "medium", "hard"];
 const importanceOptions: Importance[] = ["low", "medium", "high"];
-const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test"];
+const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test", "summary"];
 
 type QuestionCardProps = {
   question: Question;

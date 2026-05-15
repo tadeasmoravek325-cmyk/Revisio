@@ -1,9 +1,9 @@
-import { AppData } from "@/types/study";
+import { AppState } from "@/types/study";
 import { studyStorageService } from "./studyStorageService";
 
 export type StudyRepository = {
-  load(): AppData;
-  save(data: AppData): void;
+  load(): AppState;
+  save(data: AppState): void;
   clear(): void;
 };
 

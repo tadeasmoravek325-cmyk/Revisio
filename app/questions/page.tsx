@@ -78,14 +78,14 @@ export default function QuestionsPage() {
 
   const [subjectName, setSubjectName] = useState("");
   const [subjectAbbreviation, setSubjectAbbreviation] = useState("");
-  const [subjectColor, setSubjectColor] = useState("#2f9e8f");
+  const [subjectColor, setSubjectColor] = useState("#2563eb");
   const [addSubjectError, setAddSubjectError] = useState("");
   const [editSubjectError, setEditSubjectError] = useState("");
   const [editingSubjectId, setEditingSubjectId] = useState("");
   const [subjectDraft, setSubjectDraft] = useState<SubjectDraft>({
     name: "",
     abbreviation: "",
-    color: "#2f9e8f"
+    color: "#2563eb"
   });
 
   const [title, setTitle] = useState("");
@@ -108,6 +108,12 @@ export default function QuestionsPage() {
   useEffect(() => {
     setQuestionNumber(nextQuestionNumber);
   }, [nextQuestionNumber]);
+
+  useEffect(() => {
+    if (!data.subjects.some((subject) => subject.id === newSubjectId)) {
+      setNewSubjectId(data.subjects[0]?.id ?? "");
+    }
+  }, [data.subjects, newSubjectId]);
 
   const filteredQuestions = useMemo(() => {
     return data.questions
@@ -166,7 +172,7 @@ export default function QuestionsPage() {
     setAddSubjectError("");
     setSubjectName("");
     setSubjectAbbreviation("");
-    setSubjectColor("#2f9e8f");
+    setSubjectColor("#2563eb");
   }
 
   function startSubjectEdit(subject: Subject) {

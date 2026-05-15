@@ -4,7 +4,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Revisio",
-  description: "Track study preparation for final exams."
+  description: "Track study preparation for final exams.",
+  icons: {
+    icon: "/revisio-icon.svg",
+    shortcut: "/revisio-icon.svg",
+    apple: "/revisio-icon.svg"
+  }
 };
 
 export default function RootLayout({

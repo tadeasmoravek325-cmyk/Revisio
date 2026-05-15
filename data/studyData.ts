@@ -1,8 +1,10 @@
 import {
   AppData,
+  AppState,
   Difficulty,
   Importance,
   QuestionStatus,
+  StudyWorkspace,
   StudySessionType
 } from "@/types/study";
 import { addDays, toDateInputValue } from "@/utils/date";
@@ -50,14 +52,15 @@ export const sessionTypeLabels: Record<StudySessionType, string> = {
   reading: "Reading",
   active_recall: "Active recall",
   revision: "Revision",
-  test: "Test"
+  test: "Test",
+  summary: "Summary"
 };
 
 const subjects = [
-  { id: "nauka-o-podniku", name: "Nauka o podniku", abbreviation: "NP", color: "#2f9e8f" },
+  { id: "nauka-o-podniku", name: "Nauka o podniku", abbreviation: "NP", color: "#2563eb" },
   { id: "finance-podniku", name: "Finance podniku", abbreviation: "FP", color: "#d97706" },
   { id: "male-a-stredni-podnikani", name: "Malé a střední podnikání", abbreviation: "MSPO", color: "#5b6ee1" },
-  { id: "ucetnictvi-1", name: "Účetnictví 1", abbreviation: "UČ1", color: "#0f766e" },
+  { id: "ucetnictvi-1", name: "Účetnictví 1", abbreviation: "UČ1", color: "#0ea5e9" },
   { id: "ucetnictvi-2", name: "Účetnictví 2", abbreviation: "UČ2", color: "#9333ea" },
   { id: "uvod-do-managementu", name: "Úvod do managementu", abbreviation: "UM", color: "#2563eb" },
   { id: "personalni-management", name: "Personální management", abbreviation: "PM", color: "#be123c" },
@@ -408,7 +411,26 @@ export const initialData: AppData = {
   settings: {
     examDate: iso(43),
     pomodoroWorkMinutes: 25,
+    pomodoroShortBreakMinutes: 5,
+    pomodoroLongBreakMinutes: 15,
+    pomodoroLongBreakAfter: 4,
     pomodoroBreakMinutes: 5,
-    soundEnabled: true
+    soundEnabled: true,
+    notificationSound: "beep"
   }
+};
+
+export const initialWorkspace: StudyWorkspace = {
+  id: "default-workspace",
+  name: "Státnice Bc.",
+  description: "Default study preparation",
+  examDate: initialData.settings.examDate,
+  createdAt: today.toISOString(),
+  color: "#2563eb",
+  ...initialData
+};
+
+export const initialAppState: AppState = {
+  activeWorkspaceId: initialWorkspace.id,
+  workspaces: [initialWorkspace]
 };

@@ -1,13 +1,22 @@
 export type Difficulty = "easy" | "medium" | "hard";
 export type Importance = "low" | "medium" | "high";
 export type QuestionStatus = "unknown" | "partial" | "known";
-export type StudySessionType = "reading" | "active_recall" | "revision" | "test";
+export type StudySessionType = "reading" | "active_recall" | "revision" | "test" | "summary";
 
 export type Subject = {
   id: string;
   name: string;
   abbreviation: string;
   color: string;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  description: string;
+  examDate: string;
+  createdAt: string;
+  color?: string;
 };
 
 export type Question = {
@@ -27,19 +36,24 @@ export type Question = {
 
 export type StudySession = {
   id: string;
-  questionId: string;
+  questionId?: string;
   startedAt: string;
   endedAt: string;
   durationMinutes: number;
   type: StudySessionType;
   note?: string;
+  needsReview?: boolean;
 };
 
 export type Settings = {
   examDate: string;
   pomodoroWorkMinutes: number;
+  pomodoroShortBreakMinutes: number;
+  pomodoroLongBreakMinutes: number;
+  pomodoroLongBreakAfter: number;
   pomodoroBreakMinutes: number;
   soundEnabled: boolean;
+  notificationSound: "beep" | "chime";
 };
 
 export type AppData = {
@@ -47,4 +61,11 @@ export type AppData = {
   questions: Question[];
   sessions: StudySession[];
   settings: Settings;
+};
+
+export type StudyWorkspace = Workspace & AppData;
+
+export type AppState = {
+  activeWorkspaceId: string;
+  workspaces: StudyWorkspace[];
 };

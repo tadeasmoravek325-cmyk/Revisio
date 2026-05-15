@@ -19,7 +19,7 @@ const importanceWeight: Record<Question["importance"], number> = {
 };
 
 export function getSessionsForQuestion(data: AppData, questionId: string) {
-  return data.sessions.filter((session) => session.questionId === questionId);
+  return data.sessions.filter((session) => !session.needsReview && session.questionId === questionId);
 }
 
 export function getLastSeen(data: AppData, questionId: string) {
@@ -44,19 +44,14 @@ export function getDaysSinceLastSeen(data: AppData, questionId: string) {
 }
 
 export function getTotalTimeForQuestion(data: AppData, questionId: string) {
-  const question = data.questions.find((item) => item.id === questionId);
-  return (
-    question?.totalStudyTime ??
-    getSessionsForQuestion(data, questionId).reduce(
-      (sum, session) => sum + session.durationMinutes,
-      0
-    )
+  return getSessionsForQuestion(data, questionId).reduce(
+    (sum, session) => sum + session.durationMinutes,
+    0
   );
 }
 
 export function getReviewCount(data: AppData, questionId: string) {
-  const question = data.questions.find((item) => item.id === questionId);
-  return question?.reviewCount ?? getSessionsForQuestion(data, questionId).length;
+  return getSessionsForQuestion(data, questionId).length;
 }
 
 export function getQuestionRecommendationScore(data: AppData, question: Question) {
@@ -90,7 +85,7 @@ export function getTotalStudyMinutes(sessions: StudySession[]) {
 }
 
 export function getTotalTrackedStudyMinutes(data: AppData) {
-  return data.questions.reduce((sum, question) => sum + question.totalStudyTime, 0);
+  return getTotalStudyMinutes(data.sessions);
 }
 
 export function getTodayStudyMinutes(sessions: StudySession[]) {
@@ -102,7 +97,7 @@ export function getTodayStudyMinutes(sessions: StudySession[]) {
 }
 
 export function getStudiedQuestionCount(data: AppData) {
-  return data.questions.filter((question) => question.reviewCount > 0 || question.totalStudyTime > 0)
+  return data.questions.filter((question) => getSessionsForQuestion(data, question.id).length > 0)
     .length;
 }
 

@@ -38,13 +38,13 @@ function getCalendarDays(monthDate: Date) {
 
 function getIntensityClass(minutes: number) {
   if (minutes >= 90) {
-    return "border-teal-800 bg-teal-700 text-white";
+    return "border-blue-800 bg-blue-700 text-white";
   }
   if (minutes >= 60) {
-    return "border-teal-600 bg-teal-500 text-white";
+    return "border-blue-600 bg-blue-500 text-white";
   }
   if (minutes >= 30) {
-    return "border-teal-300 bg-teal-100 text-teal-950";
+    return "border-blue-300 bg-blue-100 text-blue-950";
   }
   if (minutes > 0) {
     return "border-amber-200 bg-amber-50 text-amber-950";
@@ -118,13 +118,13 @@ export default function CalendarPage() {
                   key={dateKey}
                   className={`min-h-[72px] p-1 text-left transition sm:min-h-[104px] sm:p-2 ${getIntensityClass(minutes)} ${
                     isCurrentMonth ? "" : "opacity-45"
-                  } ${isSelected ? "ring-2 ring-inset ring-slate-950 dark:ring-teal-300" : ""}`}
+                  } ${isSelected ? "ring-2 ring-inset ring-blue-700 dark:ring-blue-300" : ""}`}
                   onClick={() => setSelectedDate(dateKey)}
                 >
                   <span className="flex items-center justify-between gap-1">
                     <span className="text-xs font-black sm:text-sm">{date.getDate()}</span>
                     {isToday ? (
-                      <span className="rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] font-black text-white">
+                      <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-black text-white dark:bg-blue-500">
                         Today
                       </span>
                     ) : null}
@@ -155,7 +155,7 @@ export default function CalendarPage() {
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400">{selectedMinutes} min studied</p>
             </div>
-            <span className="badge bg-teal-100 text-teal-800">{selectedSessions.length} sessions</span>
+            <span className="badge bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-100">{selectedSessions.length} sessions</span>
           </div>
 
           <div className="mt-4 space-y-3">
@@ -167,7 +167,11 @@ export default function CalendarPage() {
                 <article key={session.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
                   <SubjectPill subject={subject} />
                   <h3 className="mt-2 text-sm font-black text-slate-900 dark:text-slate-100">
-                    {question ? `${question.number}. ${question.title}` : "Deleted question"}
+                    {question
+                      ? `${question.number}. ${question.title}`
+                      : session.needsReview || !session.questionId
+                        ? "Unassigned session"
+                        : "Deleted question"}
                   </h3>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
