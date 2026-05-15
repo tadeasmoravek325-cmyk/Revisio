@@ -24,6 +24,12 @@ import {
 } from "@/utils/studyMetrics";
 
 type WorkspaceInput = Pick<Workspace, "name" | "description" | "examDate" | "color">;
+type ImportedExamQuestionInput = {
+  subjectName: string;
+  subjectAbbreviation: string;
+  questionNumber: number;
+  questionTitle: string;
+};
 
 type StudyStoreValue = {
   data: StudyWorkspace;
@@ -38,6 +44,7 @@ type StudyStoreValue = {
   switchWorkspace: (id: string) => void;
   addSubject: (input: Omit<Subject, "id">) => void;
   updateSubject: (id: string, patch: Partial<Subject>) => void;
+  importExamTopics: (topics: ImportedExamQuestionInput[]) => { subjectsCreated: number; questionsCreated: number };
   addQuestion: (input: Omit<Question, "id" | "createdAt" | "totalStudyTime" | "reviewCount">) => void;
   updateQuestion: (id: string, patch: Partial<Question>) => void;
   deleteQuestion: (id: string) => void;
@@ -218,6 +225,80 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
             )
           }))
         );
+      },
+      importExamTopics(topics: ImportedExamQuestionInput[]) {
+        let subjectsCreated = 0;
+        let questionsCreated = 0;
+
+        setState((current) =>
+          updateWorkspaceData(current, (workspace) => {
+            const subjects = [...workspace.subjects];
+            const questions = [...workspace.questions];
+            const subjectByKey = new Map<string, Subject>();
+
+            subjects.forEach((subject) => {
+              subjectByKey.set(subject.name.trim().toLocaleLowerCase(), subject);
+              subjectByKey.set(subject.abbreviation.trim().toLocaleLowerCase(), subject);
+            });
+
+            topics.forEach((topic) => {
+              const subjectName = topic.subjectName.trim();
+              const abbreviation = topic.subjectAbbreviation.trim();
+              const subjectKey = subjectName.toLocaleLowerCase();
+              const abbreviationKey = abbreviation.toLocaleLowerCase();
+              let subject = subjectByKey.get(subjectKey) ?? subjectByKey.get(abbreviationKey);
+
+              if (!subject) {
+                subject = {
+                  id: createId("subject"),
+                  name: subjectName,
+                  abbreviation,
+                  color: "#2563eb"
+                };
+                subjects.push(subject);
+                subjectByKey.set(subjectKey, subject);
+                subjectByKey.set(abbreviationKey, subject);
+                subjectsCreated += 1;
+              }
+
+              const normalizedTitle = topic.questionTitle.trim().toLocaleLowerCase();
+              const alreadyExists = questions.some(
+                (question) =>
+                  question.subjectId === subject.id &&
+                  (question.number === topic.questionNumber ||
+                    question.title.trim().toLocaleLowerCase() === normalizedTitle)
+              );
+
+              if (alreadyExists) {
+                return;
+              }
+
+              questions.push({
+                id: createId("question"),
+                subjectId: subject.id,
+                number: topic.questionNumber,
+                title: topic.questionTitle.trim(),
+                notes: "",
+                tags: [],
+                difficulty: "medium",
+                importance: "medium",
+                status: "unknown",
+                totalStudyTime: 0,
+                reviewCount: 0,
+                createdAt: new Date().toISOString()
+              });
+              questionsCreated += 1;
+            });
+
+            return {
+              ...workspace,
+              subjects,
+              questions
+            };
+          })
+        );
+
+        return { subjectsCreated, questionsCreated };
       },
       addQuestion(input: Omit<Question, "id" | "createdAt" | "totalStudyTime" | "reviewCount">) {
         setState((current) =>

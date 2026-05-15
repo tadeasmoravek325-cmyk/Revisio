@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { ExamTopicsImportDialog } from "@/components/import/ExamTopicsImportDialog";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { useToast } from "@/components/ui/ToastProvider";
 
@@ -93,6 +94,18 @@ export function EmptyRevisioState() {
           </Link>
         </div>
       </form>
+
+      <div className="mx-auto mt-4 max-w-xl rounded-lg border border-slate-200 bg-white p-4 text-left dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-black text-slate-950 dark:text-slate-50">Import exam topics</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Create a workspace first, then import TXT, CSV, DOCX, or PDF topics into it.
+            </p>
+          </div>
+          <ExamTopicsImportDialog className="btn-secondary shrink-0 disabled:cursor-not-allowed disabled:opacity-50" />
+        </div>
+      </div>
     </section>
   );
 }

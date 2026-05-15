@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+import { ExamTopicsImportDialog } from "@/components/import/ExamTopicsImportDialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -163,6 +164,18 @@ export default function SettingsPage() {
           </div>
         </section>
       </div>
+
+      <section className="panel mt-5 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Import exam topics</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Upload TXT, CSV, DOCX, or text-based PDF exam topics, review detected subjects and questions, then approve what should be added to the active workspace.
+            </p>
+          </div>
+          <ExamTopicsImportDialog className="btn-secondary shrink-0" />
+        </div>
+      </section>
 
       <section className="panel mt-5 p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+import { ExamTopicsImportDialog } from "@/components/import/ExamTopicsImportDialog";
 import { QuestionCard } from "@/components/study/QuestionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingState } from "@/components/ui/LoadingState";
@@ -239,7 +240,10 @@ export default function QuestionsPage() {
         <LoadingState />
       ) : (
         <>
-      <PageHeader title="Questions" eyebrow="Study bank" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader title="Questions" eyebrow="Study bank" />
+        <ExamTopicsImportDialog className="btn-primary sm:mt-1" />
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <aside className="space-y-5">
