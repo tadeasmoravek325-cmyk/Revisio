@@ -61,19 +61,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/90 px-3 pb-5 pt-1.5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
-        <Link href="/" className="flex min-w-0 items-center rounded-lg px-0 py-0.5 transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
-          <Image
-            src="/revisio-full-lockup.svg"
-            alt="Revisio - Final exam preparation"
-            width={292}
-            height={195}
-            priority
-            className="h-auto w-[292px] shrink-0"
-          />
-        </Link>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/90 px-3 pb-5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
+        <div className="-mx-3 flex w-64 justify-center py-5">
+          <Link href="/" className="block rounded-lg transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
+            <Image
+              src="/revisio-logo-tight.svg"
+              alt="Revisio - Final exam preparation"
+              width={193}
+              height={66}
+              priority
+              className="h-auto w-[193px] shrink-0"
+            />
+          </Link>
+        </div>
 
-        <div className="mt-1">
+        <div>
           <WorkspaceSwitcher />
         </div>
 
