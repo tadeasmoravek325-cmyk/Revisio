@@ -1,4 +1,4 @@
-import { initialAppState, initialData } from "@/data/studyData";
+import { emptyAppState, initialData } from "@/data/studyData";
 import { AppData, AppState, StudyWorkspace } from "@/types/study";
 import {
   ensureUniqueSubjectAbbreviation,
@@ -14,7 +14,7 @@ export type StudyStorageService = {
   clear(): void;
 };
 
-function hasWorkspaceShape(value: unknown): value is AppState {
+export function hasWorkspaceShape(value: unknown): value is AppState {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -87,11 +87,25 @@ function migrateWorkspace(workspace: StudyWorkspace): StudyWorkspace {
   };
 }
 
-function migrateStudyState(value: unknown): AppState {
+function hasLegacyStudyDataShape(value: unknown): value is AppData {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as AppData).subjects) &&
+    Array.isArray((value as AppData).questions) &&
+    Array.isArray((value as AppData).sessions) &&
+    typeof (value as AppData).settings === "object" &&
+    (value as AppData).settings !== null
+  );
+}
+
+export function migrateStudyState(value: unknown): AppState {
   if (hasWorkspaceShape(value)) {
-    const workspaces = value.workspaces.length
-      ? value.workspaces.map(migrateWorkspace)
-      : initialAppState.workspaces;
+    if (!value.workspaces.length) {
+      return emptyAppState;
+    }
+
+    const workspaces = value.workspaces.map(migrateWorkspace);
     const activeWorkspaceId = workspaces.some((workspace) => workspace.id === value.activeWorkspaceId)
       ? value.activeWorkspaceId
       : workspaces[0].id;
@@ -99,10 +113,14 @@ function migrateStudyState(value: unknown): AppState {
     return { activeWorkspaceId, workspaces };
   }
 
-  return {
-    activeWorkspaceId: "default-workspace",
-    workspaces: [createDefaultWorkspace(value as AppData)]
-  };
+  if (hasLegacyStudyDataShape(value)) {
+    return {
+      activeWorkspaceId: "default-workspace",
+      workspaces: [createDefaultWorkspace(value)]
+    };
+  }
+
+  throw new Error("Invalid Revisio backup structure.");
 }
 
 export function createStudyStorageService(
@@ -112,7 +130,7 @@ export function createStudyStorageService(
     read() {
       const saved = storage.getItem(STUDY_DATA_STORAGE_KEY);
       if (!saved) {
-        return initialAppState;
+        return emptyAppState;
       }
 
       try {

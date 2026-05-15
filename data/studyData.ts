@@ -434,3 +434,8 @@ export const initialAppState: AppState = {
   activeWorkspaceId: initialWorkspace.id,
   workspaces: [initialWorkspace]
 };
+
+export const emptyAppState: AppState = {
+  activeWorkspaceId: "",
+  workspaces: []
+};

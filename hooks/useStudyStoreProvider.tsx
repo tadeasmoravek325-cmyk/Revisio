@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { initialAppState, initialData } from "@/data/studyData";
+import { emptyAppState, initialAppState, initialData } from "@/data/studyData";
+import { backupService } from "@/services/backupService";
 import { localStudyRepository } from "@/services/studyRepository";
 import {
   AppData,
@@ -29,6 +30,7 @@ type StudyStoreValue = {
   workspaces: StudyWorkspace[];
   activeWorkspaceId: string;
   activeWorkspace?: StudyWorkspace;
+  hasWorkspaces: boolean;
   hydrated: boolean;
   addWorkspace: (input: WorkspaceInput) => void;
   updateWorkspace: (id: string, patch: Partial<WorkspaceInput>) => void;
@@ -43,6 +45,10 @@ type StudyStoreValue = {
   updateSession: (id: string, patch: Partial<StudySession>) => void;
   deleteSession: (id: string) => void;
   updateSettings: (settings: AppData["settings"]) => void;
+  automaticBackupsEnabled: boolean;
+  setAutomaticBackupsEnabled: (enabled: boolean) => void;
+  replaceStudyState: (nextState: AppState) => void;
+  resetAppData: () => void;
   resetDemoData: () => void;
   getLastSeen: (questionId: string) => string | undefined;
   getDaysSinceLastSeen: (questionId: string) => number | undefined;
@@ -53,6 +59,19 @@ type StudyStoreValue = {
 };
 
 const StudyStoreContext = createContext<StudyStoreValue | undefined>(undefined);
+
+const emptyWorkspacePlaceholder: StudyWorkspace = {
+  id: "",
+  name: "",
+  description: "",
+  examDate: "",
+  createdAt: "",
+  color: "#2563eb",
+  subjects: [],
+  questions: [],
+  sessions: [],
+  settings: initialData.settings
+};
 
 function createEmptyWorkspace(input: WorkspaceInput): StudyWorkspace {
   const examDate = input.examDate || initialData.settings.examDate;
@@ -89,22 +108,29 @@ function updateWorkspaceData(
 export function StudyStoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(initialAppState);
   const [hydrated, setHydrated] = useState(false);
+  const [automaticBackupsEnabled, setAutomaticBackupsEnabledState] = useState(false);
 
   useEffect(() => {
     setState(localStudyRepository.load());
+    setAutomaticBackupsEnabledState(backupService.getAutomaticBackupsEnabled());
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (hydrated) {
-      localStudyRepository.save(state);
+      if (state.workspaces.length) {
+        localStudyRepository.save(state);
+        backupService.createSnapshot(state);
+      } else {
+        localStudyRepository.clear();
+      }
     }
   }, [hydrated, state]);
 
   const activeWorkspace =
     state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ??
     state.workspaces[0] ??
-    initialAppState.workspaces[0];
+    emptyWorkspacePlaceholder;
 
   const actions = useMemo(
     () => ({
@@ -275,6 +301,25 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
           }))
         );
       },
+      setAutomaticBackupsEnabled(enabled: boolean) {
+        backupService.setAutomaticBackupsEnabled(enabled);
+        setAutomaticBackupsEnabledState(enabled);
+        if (enabled) {
+          setState((current) => {
+            backupService.createSnapshot(current, true);
+            return current;
+          });
+        }
+      },
+      replaceStudyState(nextState: AppState) {
+        setState(nextState);
+      },
+      resetAppData() {
+        localStudyRepository.clear();
+        backupService.clearAllBackupData();
+        setAutomaticBackupsEnabledState(false);
+        setState(emptyAppState);
+      },
       resetDemoData() {
         setState((current) =>
           updateWorkspaceData(current, (workspace) => ({
@@ -318,11 +363,13 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       workspaces: state.workspaces,
       activeWorkspace,
       activeWorkspaceId: state.activeWorkspaceId,
+      automaticBackupsEnabled,
+      hasWorkspaces: state.workspaces.length > 0,
       hydrated,
       ...actions,
       ...helpers
     }),
-    [actions, activeWorkspace, helpers, hydrated, state.activeWorkspaceId, state.workspaces]
+    [actions, activeWorkspace, automaticBackupsEnabled, helpers, hydrated, state.activeWorkspaceId, state.workspaces]
   );
 
   return <StudyStoreContext.Provider value={value}>{children}</StudyStoreContext.Provider>;

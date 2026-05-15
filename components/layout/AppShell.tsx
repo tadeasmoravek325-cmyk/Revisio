@@ -61,31 +61,23 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/90 px-4 py-5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
-        <Link href="/" className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/90 px-3 pb-5 pt-1.5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
+        <Link href="/" className="flex min-w-0 items-center rounded-lg px-0 py-0.5 transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
           <Image
-            src="/revisio-icon.svg"
-            alt="Revisio"
-            width={62}
-            height={62}
+            src="/revisio-full-lockup.svg"
+            alt="Revisio - Final exam preparation"
+            width={292}
+            height={195}
             priority
-            className="h-[62px] w-[62px] shrink-0 rounded-xl"
+            className="h-auto w-[292px] shrink-0"
           />
-          <span className="min-w-0">
-            <span className="block truncate text-2xl font-semibold leading-none tracking-normal text-slate-950 dark:text-slate-50">
-              Revisio
-            </span>
-            <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
-              Final exam preparation
-            </span>
-          </span>
         </Link>
 
-        <div className="mt-5">
+        <div className="mt-1">
           <WorkspaceSwitcher />
         </div>
 
-        <nav className="mt-6 space-y-1">
+        <nav className="mt-5 space-y-1">
           {navItems.map((item) => {
             const active = pathname === item.href;
             return (
@@ -119,16 +111,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:hidden">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="flex min-w-0 items-center gap-3">
-            <Image src="/revisio-icon.svg" alt="Revisio" width={56} height={56} priority className="h-[56px] w-[56px] shrink-0 rounded-xl" />
-            <span className="min-w-0">
-              <span className="block truncate text-xl font-semibold leading-none tracking-normal text-slate-950 dark:text-slate-50">
-                Revisio
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Final exam preparation
-              </span>
-            </span>
+          <Link href="/" className="flex min-w-0 items-center">
+            <Image
+              src="/revisio-full-lockup.svg"
+              alt="Revisio - Final exam preparation"
+              width={126}
+              height={84}
+              priority
+              className="h-auto w-[126px] shrink-0"
+            />
           </Link>
           <button className="btn-secondary px-3" onClick={toggleTheme} aria-label="Toggle color theme">
             {theme === "dark" ? "Light" : "Dark"}
@@ -144,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
+        <div className="mx-auto grid max-w-xl grid-cols-6 gap-1">
           {navItems.map((item) => {
             const active = pathname === item.href;
             return (

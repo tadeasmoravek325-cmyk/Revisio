@@ -4,6 +4,7 @@ import { DashboardStatCard } from "@/components/dashboard/DashboardStatCard";
 import { RecommendedQuestionsWidget } from "@/components/dashboard/RecommendedQuestionsWidget";
 import { SubjectProgressWidget } from "@/components/dashboard/SubjectProgressWidget";
 import { AppShell } from "@/components/layout/AppShell";
+import { EmptyRevisioState } from "@/components/onboarding/EmptyRevisioState";
 import { SessionForm } from "@/components/study/SessionForm";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -31,6 +32,7 @@ export default function DashboardPage() {
     getRecommendedQuestions,
     getReviewCount,
     getTotalTimeForQuestion,
+    hasWorkspaces,
     hydrated,
     logSession
   } = useStudyStore();
@@ -53,6 +55,14 @@ export default function DashboardPage() {
     return (
       <AppShell>
         <LoadingState />
+      </AppShell>
+    );
+  }
+
+  if (!hasWorkspaces) {
+    return (
+      <AppShell>
+        <EmptyRevisioState />
       </AppShell>
     );
   }

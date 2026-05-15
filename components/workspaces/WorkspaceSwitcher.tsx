@@ -18,8 +18,8 @@ export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
     addWorkspace,
     deleteWorkspace,
     switchWorkspace,
-    updateWorkspace,
-    workspaces
+      updateWorkspace,
+      workspaces
   } = useStudyStore();
   const { showToast } = useToast();
   const [mode, setMode] = useState<"closed" | "create" | "edit">("closed");
@@ -82,7 +82,7 @@ export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
   }
 
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-900/70 ${compact ? "w-full" : ""}`}>
+    <div id="workspace-switcher" className={`rounded-lg border border-slate-200 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-900/70 ${compact ? "w-full" : ""}`}>
       <div className="flex items-center gap-2">
         <span
           className="h-3 w-3 shrink-0 rounded-full"
@@ -90,38 +90,40 @@ export function WorkspaceSwitcher({ compact = false }: WorkspaceSwitcherProps) {
         />
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-slate-950 dark:text-slate-50">
-            {activeWorkspace?.name ?? "Workspace"}
+            {activeWorkspace?.name || "No workspace"}
           </p>
           {!compact ? (
             <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">
-              {activeWorkspace?.description || "Current study preparation"}
+              {activeWorkspace?.description || "Create a workspace to begin"}
             </p>
           ) : null}
         </div>
       </div>
 
-      <select
-        className="field mt-3"
-        value={activeWorkspaceId}
-        onChange={(event) => switchWorkspace(event.target.value)}
-      >
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-          </option>
-        ))}
-      </select>
+      {workspaces.length ? (
+        <select
+          className="field mt-3"
+          value={activeWorkspaceId}
+          onChange={(event) => switchWorkspace(event.target.value)}
+        >
+          {workspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+            </option>
+          ))}
+        </select>
+      ) : null}
 
       <div className="mt-2 grid grid-cols-3 gap-2">
         <button className="btn-secondary px-2 py-1.5 text-xs" onClick={() => setMode("create")}>
           New
         </button>
-        <button className="btn-secondary px-2 py-1.5 text-xs" onClick={() => setMode("edit")}>
+        <button className="btn-secondary px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={!workspaces.length} onClick={() => setMode("edit")}>
           Edit
         </button>
         <button
           className="btn-secondary px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={workspaces.length <= 1}
+          disabled={!workspaces.length}
           onClick={() => setDeleteConfirmOpen(true)}
         >
           Delete
