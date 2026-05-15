@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: #f6f7f4;
+  --foreground: #1c2331;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0f172a;
+  --foreground: #e5e7eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at top left, rgba(67, 152, 128, 0.16), transparent 34rem),
+    linear-gradient(135deg, #f6f7f4 0%, #f3f0e8 44%, #eef4f2 100%);
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top left, rgba(45, 212, 191, 0.12), transparent 34rem),
+    linear-gradient(135deg, #0f172a 0%, #111827 48%, #172033 100%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-slate-200/80 bg-white/[0.86] shadow-soft backdrop-blur transition dark:border-slate-700/70 dark:bg-slate-900/75 dark:shadow-none;
+  }
+
+  .field {
+    @apply w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-400 dark:focus:ring-teal-400/10;
+  }
+
+  .btn-primary {
+    @apply rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98] dark:bg-teal-500 dark:text-slate-950 dark:hover:bg-teal-400;
+  }
+
+  .btn-secondary {
+    @apply rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800;
+  }
+
+  .badge {
+    @apply rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .surface-muted {
+    @apply bg-slate-50 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300;
+  }
+
+  .animate-enter {
+    animation: fade-slide-up 260ms ease both;
+  }
+
+  .skeleton {
+    animation: soft-pulse 1.35s ease-in-out infinite;
+    @apply rounded-md bg-slate-200 dark:bg-slate-700;
+  }
+}
