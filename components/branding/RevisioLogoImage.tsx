@@ -1,15 +1,25 @@
 "use client";
 
 import Image, { ImageProps } from "next/image";
-import { useTheme } from "@/components/ui/ThemeProvider";
 
 type RevisioLogoImageProps = Omit<ImageProps, "src"> & {
   lightSrc: string;
   darkSrc?: string;
 };
 
-export function RevisioLogoImage({ lightSrc, darkSrc, ...props }: RevisioLogoImageProps) {
-  const { theme } = useTheme();
+function mergeClassNames(...classes: Array<string | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
-  return <Image {...props} src={theme === "dark" ? darkSrc ?? lightSrc : lightSrc} />;
+export function RevisioLogoImage({ lightSrc, darkSrc, className, ...props }: RevisioLogoImageProps) {
+  if (!darkSrc) {
+    return <Image {...props} src={lightSrc} className={className} />;
+  }
+
+  return (
+    <>
+      <Image {...props} src={lightSrc} className={mergeClassNames(className, "dark:hidden")} />
+      <Image {...props} src={darkSrc} className={mergeClassNames(className, "hidden dark:block")} />
+    </>
+  );
 }

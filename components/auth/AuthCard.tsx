@@ -24,7 +24,7 @@ export function AuthCard({
           width={96}
           height={96}
           priority
-          className="mx-auto h-auto w-20 sm:w-24"
+          className="mx-auto h-auto w-40 sm:w-48"
         />
         <p className="mt-6 text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
           {eyebrow}
