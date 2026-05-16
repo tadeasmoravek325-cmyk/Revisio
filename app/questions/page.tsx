@@ -11,6 +11,10 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { difficultyLabels, importanceLabels, statusLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { Difficulty, Importance, QuestionStatus, Subject } from "@/types/study";
+import {
+  compareQuestionsBySubjectAndNumber,
+  parseQuestionNumber
+} from "@/utils/questionSorting";
 import { isSubjectAbbreviationDuplicate } from "@/utils/subjects";
 
 const statusOptions: QuestionStatus[] = ["unknown", "partial", "known"];
@@ -22,9 +26,10 @@ const difficultyRank: Record<Difficulty, number> = {
   hard: 3
 };
 
-type SortKey = "daysSinceLastSeen" | "reviewCount" | "totalTime" | "difficulty";
+type SortKey = "subjectNumber" | "daysSinceLastSeen" | "reviewCount" | "totalTime" | "difficulty";
 
 const sortLabels: Record<SortKey, string> = {
+  subjectNumber: "Subject and number",
   daysSinceLastSeen: "Days since last seen",
   reviewCount: "Review count",
   totalTime: "Total time",
@@ -75,7 +80,7 @@ export default function QuestionsPage() {
 
   const [subjectId, setSubjectId] = useState("all");
   const [status, setStatus] = useState<QuestionStatus | "all">("all");
-  const [sortBy, setSortBy] = useState<SortKey>("daysSinceLastSeen");
+  const [sortBy, setSortBy] = useState<SortKey>("subjectNumber");
 
   const [subjectName, setSubjectName] = useState("");
   const [subjectAbbreviation, setSubjectAbbreviation] = useState("");
@@ -102,7 +107,8 @@ export default function QuestionsPage() {
   const nextQuestionNumber = useMemo(() => {
     const numbers = data.questions
       .filter((question) => question.subjectId === selectedSubjectId)
-      .map((question) => question.number);
+      .map((question) => parseQuestionNumber(question.number))
+      .filter((number): number is number => number !== undefined);
     return numbers.length ? Math.max(...numbers) + 1 : 1;
   }, [data.questions, selectedSubjectId]);
 
@@ -117,6 +123,8 @@ export default function QuestionsPage() {
   }, [data.subjects, newSubjectId]);
 
   const filteredQuestions = useMemo(() => {
+    const questionOrder = compareQuestionsBySubjectAndNumber(data.subjects);
+
     return data.questions
       .filter(
         (question) =>
@@ -124,24 +132,29 @@ export default function QuestionsPage() {
           (status === "all" || question.status === status)
       )
       .sort((a, b) => {
+        if (sortBy === "subjectNumber") {
+          return questionOrder(a, b);
+        }
+
         if (sortBy === "daysSinceLastSeen") {
           const aDays = getDaysSinceLastSeen(a.id) ?? Number.MAX_SAFE_INTEGER;
           const bDays = getDaysSinceLastSeen(b.id) ?? Number.MAX_SAFE_INTEGER;
-          return bDays - aDays;
+          return bDays - aDays || questionOrder(a, b);
         }
 
         if (sortBy === "reviewCount") {
-          return getReviewCount(b.id) - getReviewCount(a.id);
+          return getReviewCount(b.id) - getReviewCount(a.id) || questionOrder(a, b);
         }
 
         if (sortBy === "totalTime") {
-          return getTotalTimeForQuestion(b.id) - getTotalTimeForQuestion(a.id);
+          return getTotalTimeForQuestion(b.id) - getTotalTimeForQuestion(a.id) || questionOrder(a, b);
         }
 
-        return difficultyRank[b.difficulty] - difficultyRank[a.difficulty];
+        return difficultyRank[b.difficulty] - difficultyRank[a.difficulty] || questionOrder(a, b);
       });
   }, [
     data.questions,
+    data.subjects,
     getDaysSinceLastSeen,
     getReviewCount,
     getTotalTimeForQuestion,

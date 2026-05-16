@@ -24,8 +24,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useToast } from "@/components/ui/ToastProvider";
 import { difficultyLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
-import { Question, StudySession } from "@/types/study";
+import { Question, StudySession, Subject } from "@/types/study";
 import { addDays, toDateInputValue } from "@/utils/date";
+import { compareQuestionsBySubjectAndNumber, parseQuestionNumber } from "@/utils/questionSorting";
 import {
   getAverageStudyMinutesPerDay,
   getDaysSinceLastSeen,
@@ -51,7 +52,8 @@ type QuestionChartItem = {
   id: string;
   label: string;
   title: string;
-  questionNumber: number;
+  questionNumber: number | string;
+  question: Question;
   subject: string;
   subjectAbbreviation: string;
   minutes: number;
@@ -144,7 +146,13 @@ function getStudyStreaks(sessions: StudySession[]) {
   return { current, longest };
 }
 
-function getNeglectedQuestions(questions: Question[], getDays: (questionId: string) => number | undefined) {
+function getNeglectedQuestions(
+  questions: Question[],
+  subjects: Subject[],
+  getDays: (questionId: string) => number | undefined
+) {
+  const questionOrder = compareQuestionsBySubjectAndNumber(subjects);
+
   return [...questions]
     .map((question) => ({
       question,
@@ -157,7 +165,7 @@ function getNeglectedQuestions(questions: Question[], getDays: (questionId: stri
       if (a.daysSinceLastSeen !== undefined && b.daysSinceLastSeen === undefined) {
         return 1;
       }
-      return (b.daysSinceLastSeen ?? 0) - (a.daysSinceLastSeen ?? 0);
+      return (b.daysSinceLastSeen ?? 0) - (a.daysSinceLastSeen ?? 0) || questionOrder(a.question, b.question);
     })
     .slice(0, 6);
 }
@@ -227,6 +235,7 @@ export default function ReportsPage() {
   const streaks = getStudyStreaks(data.sessions);
 
   const dailyData = getStudyTimeByDay(data.sessions);
+  const questionOrder = compareQuestionsBySubjectAndNumber(data.subjects);
   const subjectData = data.subjects.map((subject) => {
     const questionIds = data.questions
       .filter((question) => question.subjectId === subject.id)
@@ -252,7 +261,8 @@ export default function ReportsPage() {
         id: question.id,
         label: `${subjectAbbreviation} ${question.number}`,
         title: question.title,
-        questionNumber: question.number,
+        questionNumber: parseQuestionNumber(question.number) ?? question.number,
+        question,
         subject: subject?.name ?? "No subject",
         subjectAbbreviation,
         minutes: getTotalTimeForQuestion(data, question.id),
@@ -261,7 +271,7 @@ export default function ReportsPage() {
         daysSinceLastSeen: getDaysSinceLastSeen(data, question.id)
       };
     })
-    .sort((a, b) => b.minutes - a.minutes);
+    .sort((a, b) => b.minutes - a.minutes || questionOrder(a.question, b.question));
 
   const questionData =
     questionLimit === "all"
@@ -269,14 +279,15 @@ export default function ReportsPage() {
       : allQuestionData.slice(0, Number(questionLimit));
   const questionChartWidth = Math.max(520, questionData.length * 72);
 
-  const neglectedQuestions = getNeglectedQuestions(data.questions, daysSinceLastSeen);
+  const neglectedQuestions = getNeglectedQuestions(data.questions, data.subjects, daysSinceLastSeen);
   const hardestQuestions = [...data.questions]
     .sort((a, b) => {
       const difficultyRank = { hard: 3, medium: 2, easy: 1 };
       return (
         difficultyRank[b.difficulty] - difficultyRank[a.difficulty] ||
         getReviewCount(data, a.id) - getReviewCount(data, b.id) ||
-        getTotalTimeForQuestion(data, a.id) - getTotalTimeForQuestion(data, b.id)
+        getTotalTimeForQuestion(data, a.id) - getTotalTimeForQuestion(data, b.id) ||
+        questionOrder(a, b)
       );
     })
     .slice(0, 6);

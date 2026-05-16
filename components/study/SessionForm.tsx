@@ -5,6 +5,7 @@ import { sessionTypeLabels } from "@/data/studyData";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Question, StudySession, Subject } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
+import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 
 type SessionFormProps = {
   subjects: Subject[];
@@ -22,8 +23,11 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
   const [note, setNote] = useState("");
 
   const subjectQuestions = useMemo(
-    () => questions.filter((question) => question.subjectId === subjectId),
-    [questions, subjectId]
+    () => sortQuestionsBySubjectAndNumber(
+      questions.filter((question) => question.subjectId === subjectId),
+      subjects
+    ),
+    [questions, subjectId, subjects]
   );
 
   function handleSubmit(event: FormEvent) {

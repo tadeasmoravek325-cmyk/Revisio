@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { Question, StudySession, StudySessionType } from "@/types/study";
+import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 
 type TimerPhase = "work" | "short_break" | "long_break";
 type TargetMode = "single" | "multiple" | "decide" | "later";
@@ -198,6 +199,10 @@ export default function PomodoroPage() {
   const progress = duration ? (duration - secondsLeft) / duration : 0;
   const dashOffset = circumference * (1 - progress);
   const unassignedSessions = data.sessions.filter((session) => session.needsReview || !session.questionId);
+  const sortedQuestions = useMemo(
+    () => sortQuestionsBySubjectAndNumber(data.questions, data.subjects),
+    [data.questions, data.subjects]
+  );
   const reviewedSessions = data.sessions
     .filter((session) => !session.needsReview && session.questionId)
     .sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
@@ -234,7 +239,7 @@ export default function PomodoroPage() {
                   </div>
                   {targetMode !== "decide" && targetMode !== "later" ? (
                     <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
-                      {data.questions.map((question) => {
+                      {sortedQuestions.map((question) => {
                         const checked = plannedQuestionIds.includes(question.id);
                         return (
                           <label key={question.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm font-semibold text-slate-700 dark:bg-slate-950 dark:text-slate-200">
@@ -332,7 +337,7 @@ export default function PomodoroPage() {
 
           <NeedsReview
             sessions={unassignedSessions}
-            questions={data.questions}
+            questions={sortedQuestions}
             onReview={(session) =>
               setPendingInterval({
                 sessionId: session.id,
@@ -353,7 +358,7 @@ export default function PomodoroPage() {
 
           <RecentSessions
             sessions={reviewedSessions}
-            questions={data.questions}
+            questions={sortedQuestions}
             onEdit={(session) =>
               setPendingInterval({
                 sessionId: session.id,
@@ -384,7 +389,7 @@ export default function PomodoroPage() {
                     ? []
                     : plannedQuestionIds
               }
-              questions={data.questions}
+              questions={sortedQuestions}
               onClose={() => setPendingInterval(null)}
               onLogLater={(durationMinutes, type, note) => {
                 const endedAt = new Date(

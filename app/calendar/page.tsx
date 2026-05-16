@@ -1,16 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { SubjectPill } from "@/components/study/SubjectPill";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
-import { StudySession } from "@/types/study";
+import { StudySession, StudySessionType } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
+import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test", "summary"];
 
 function getMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -57,18 +61,86 @@ function getSessionsForDate(sessions: StudySession[], date: string) {
 }
 
 export default function CalendarPage() {
-  const { data, hydrated } = useStudyStore();
+  const { data, deleteSession, hydrated, updateSession } = useStudyStore();
+  const { showToast } = useToast();
   const today = toDateInputValue(new Date());
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(today);
+  const [editingSessionId, setEditingSessionId] = useState("");
+  const [deleteSessionId, setDeleteSessionId] = useState("");
+  const [editSubjectId, setEditSubjectId] = useState("");
+  const [editQuestionId, setEditQuestionId] = useState("");
+  const [editDate, setEditDate] = useState(today);
+  const [editDuration, setEditDuration] = useState(25);
+  const [editType, setEditType] = useState<StudySessionType>("active_recall");
+  const [editNote, setEditNote] = useState("");
 
   const calendarDays = useMemo(() => getCalendarDays(visibleMonth), [visibleMonth]);
   const monthKey = getMonthKey(visibleMonth);
   const selectedSessions = getSessionsForDate(data.sessions, selectedDate);
   const selectedMinutes = selectedSessions.reduce((sum, session) => sum + session.durationMinutes, 0);
+  const sortedQuestions = useMemo(
+    () => sortQuestionsBySubjectAndNumber(data.questions, data.subjects),
+    [data.questions, data.subjects]
+  );
+  const editingSession = data.sessions.find((session) => session.id === editingSessionId);
+  const sessionToDelete = data.sessions.find((session) => session.id === deleteSessionId);
+  const editSubjectQuestions = sortedQuestions.filter((question) => question.subjectId === editSubjectId);
 
   function moveMonth(delta: number) {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  }
+
+  function startEditSession(session: StudySession) {
+    const question = data.questions.find((item) => item.id === session.questionId);
+    setEditingSessionId(session.id);
+    setEditSubjectId(question?.subjectId ?? data.subjects[0]?.id ?? "");
+    setEditQuestionId(question?.id ?? "");
+    setEditDate(session.startedAt.slice(0, 10));
+    setEditDuration(session.durationMinutes);
+    setEditType(session.type);
+    setEditNote(session.note ?? "");
+  }
+
+  function handleEditSubjectChange(subjectId: string) {
+    const nextQuestionId = sortedQuestions.find((question) => question.subjectId === subjectId)?.id ?? "";
+    setEditSubjectId(subjectId);
+    setEditQuestionId(nextQuestionId);
+  }
+
+  function handleEditSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!editingSession || editDuration < 1 || !editDate) {
+      return;
+    }
+
+    const originalStart = new Date(editingSession.startedAt);
+    const hours = Number.isNaN(originalStart.getHours()) ? 12 : originalStart.getHours();
+    const minutes = Number.isNaN(originalStart.getMinutes()) ? 0 : originalStart.getMinutes();
+    const startedAt = new Date(`${editDate}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`);
+    const endedAt = new Date(startedAt.getTime() + editDuration * 60 * 1000);
+
+    updateSession(editingSession.id, {
+      questionId: editQuestionId || undefined,
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMinutes: editDuration,
+      type: editType,
+      note: editNote.trim(),
+      needsReview: !editQuestionId
+    });
+    setEditingSessionId("");
+    showToast("Session updated");
+  }
+
+  function handleDeleteConfirm() {
+    if (!sessionToDelete) {
+      return;
+    }
+
+    deleteSession(sessionToDelete.id);
+    setDeleteSessionId("");
+    showToast("Session deleted", "warning");
   }
 
   return (
@@ -183,6 +255,19 @@ export default function CalendarPage() {
                       <p className="font-black text-slate-900 dark:text-slate-100">{sessionTypeLabels[session.type]}</p>
                     </div>
                   </div>
+                  {session.note ? (
+                    <p className="mt-3 rounded-md bg-white p-2 text-sm font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                      {session.note}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button className="btn-primary" type="button" onClick={() => startEditSession(session)}>
+                      Edit
+                    </button>
+                    <button className="btn-secondary" type="button" onClick={() => setDeleteSessionId(session.id)}>
+                      Delete
+                    </button>
+                  </div>
                 </article>
               );
             })}
@@ -195,6 +280,99 @@ export default function CalendarPage() {
           </div>
         </aside>
       </div>
+      {editingSession ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/50 px-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <form onSubmit={handleEditSubmit} className="animate-enter max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Edit study session</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Change the linked question, date, duration, type, or note.
+                </p>
+              </div>
+              <button className="btn-secondary px-3" type="button" onClick={() => setEditingSessionId("")}>
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Subject
+                <select className="field mt-1" value={editSubjectId} onChange={(event) => handleEditSubjectChange(event.target.value)}>
+                  {data.subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Question
+                <select className="field mt-1" value={editQuestionId} onChange={(event) => setEditQuestionId(event.target.value)}>
+                  <option value="">Unassigned session</option>
+                  {editSubjectQuestions.map((question) => (
+                    <option key={question.id} value={question.id}>
+                      {question.number}. {question.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Date
+                <input className="field mt-1" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Duration
+                <input
+                  className="field mt-1"
+                  min={1}
+                  type="number"
+                  value={editDuration}
+                  onChange={(event) => setEditDuration(Math.max(1, Number(event.target.value)))}
+                />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 sm:col-span-2">
+                Study type
+                <select className="field mt-1" value={editType} onChange={(event) => setEditType(event.target.value as StudySessionType)}>
+                  {sessionTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {sessionTypeLabels[option]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="mt-3 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Note
+              <textarea
+                className="field mt-1 min-h-24 resize-none"
+                value={editNote}
+                onChange={(event) => setEditNote(event.target.value)}
+                placeholder="Optional session note"
+              />
+            </label>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button className="btn-secondary" type="button" onClick={() => setEditingSessionId("")}>
+                Cancel
+              </button>
+              <button className="btn-primary" type="submit">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={Boolean(sessionToDelete)}
+        title="Delete study session?"
+        message="This will remove the logged session from your cloud data. This cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onCancel={() => setDeleteSessionId("")}
+        onConfirm={handleDeleteConfirm}
+      />
       </>
       )}
     </AppShell>
