@@ -10,6 +10,7 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { getDaysUntil } from "@/utils/date";
+import { formatStudyTime } from "@/utils/timeFormat";
 import {
   getAverageStudyMinutesPerDay,
   getStudiedQuestionCount,
@@ -115,8 +116,7 @@ export default function DashboardPage() {
             </div>
             <div className="rounded-lg bg-blue-50 p-4 text-blue-950 dark:bg-blue-500/10 dark:text-blue-100">
               <p className="text-xs font-bold uppercase tracking-[0.12em] opacity-70">Today</p>
-              <p className="mt-2 text-3xl font-black">{todayStudyTime}</p>
-              <p className="text-sm font-semibold opacity-70">minutes</p>
+              <p className="mt-2 text-3xl font-black">{formatStudyTime(todayStudyTime)}</p>
             </div>
           </div>
         </div>
@@ -135,12 +135,12 @@ export default function DashboardPage() {
         />
         <DashboardStatCard
           label="Total study time"
-          value={`${totalStudyTime} min`}
+          value={formatStudyTime(totalStudyTime)}
           detail="Across all questions"
         />
         <DashboardStatCard
           label="Today study time"
-          value={`${todayStudyTime} min`}
+          value={formatStudyTime(todayStudyTime)}
           detail="Logged today"
         />
         <DashboardStatCard
@@ -155,7 +155,7 @@ export default function DashboardPage() {
         />
         <DashboardStatCard
           label="Average per day"
-          value={`${averageStudyTimePerDay} min`}
+          value={formatStudyTime(averageStudyTimePerDay)}
           detail="Since first tracked question"
         />
         <DashboardStatCard

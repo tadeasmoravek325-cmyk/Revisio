@@ -27,6 +27,7 @@ import { useStudyStore } from "@/hooks/useStudyStore";
 import { Question, StudySession, Subject } from "@/types/study";
 import { addDays, createLocalDateTime, toDateInputValue } from "@/utils/date";
 import { compareQuestionsBySubjectAndNumber, parseQuestionNumber } from "@/utils/questionSorting";
+import { formatStudyTime } from "@/utils/timeFormat";
 import {
   getAverageStudyMinutesPerDay,
   getDaysSinceLastSeen,
@@ -188,7 +189,7 @@ function SubjectStudyTooltip({
     <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-soft dark:border-slate-700 dark:bg-slate-900">
       <p className="font-black text-slate-950 dark:text-slate-50">{item.subject}</p>
       <p className="mt-1 font-semibold text-slate-500 dark:text-slate-400">
-        {item.abbreviation} · {item.minutes} min
+        {item.abbreviation} · {formatStudyTime(item.minutes)}
       </p>
     </div>
   );
@@ -217,7 +218,7 @@ function QuestionStudyTooltip({
         Question {item.questionNumber}: {item.title}
       </p>
       <div className="mt-3 space-y-1 font-semibold text-slate-600 dark:text-slate-300">
-        <p>Study time: {item.minutes} min</p>
+        <p>Study time: {formatStudyTime(item.minutes)}</p>
         <p>Review count: {item.reviewCount}</p>
         <p>Last reviewed: {formatLastReviewed(item.lastSeen, item.daysSinceLastSeen)}</p>
       </div>
@@ -306,8 +307,8 @@ export default function ReportsPage() {
       </PageHeader>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Total study" value={`${totalMinutes} min`} detail={`${data.sessions.length} sessions logged`} />
-        <MetricCard label="Daily average" value={`${averageDailyMinutes} min`} detail="Across your preparation history" />
+        <MetricCard label="Total study" value={formatStudyTime(totalMinutes)} detail={`${data.sessions.length} sessions logged`} />
+        <MetricCard label="Daily average" value={formatStudyTime(averageDailyMinutes)} detail="Across your preparation history" />
         <MetricCard label="Current streak" value={`${streaks.current} days`} detail={`Longest streak: ${streaks.longest} days`} />
         <MetricCard label="Studied questions" value={`${getStudiedQuestionCount(data)}/${data.questions.length}`} detail="Questions with at least one review" />
       </div>
@@ -325,8 +326,8 @@ export default function ReportsPage() {
                 </defs>
                 <CartesianGrid stroke={chartGridColor} vertical={false} />
                 <XAxis dataKey="day" tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
-                <Tooltip />
+                <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickFormatter={(value) => formatStudyTime(Number(value))} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => formatStudyTime(Number(value))} />
                 <Area type="monotone" dataKey="minutes" stroke="#2563eb" strokeWidth={3} fill="url(#dailyStudyGradient)" />
               </AreaChart>
             </ResponsiveContainer>
@@ -347,7 +348,7 @@ export default function ReportsPage() {
             </div>
           </div>
           <div className="mt-4 rounded-lg bg-blue-50 p-4 text-sm font-semibold text-blue-900 dark:bg-blue-500/15 dark:text-blue-100">
-            Average daily study time is {averageDailyMinutes} minutes.
+            Average daily study time is {formatStudyTime(averageDailyMinutes)}.
           </div>
         </ReportCard>
       </div>
@@ -358,11 +359,11 @@ export default function ReportsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={subjectData} layout="vertical" margin={{ left: 0, right: 42, top: 4, bottom: 4 }}>
                 <CartesianGrid stroke={chartGridColor} horizontal={false} />
-                <XAxis type="number" tick={{ fill: chartTextColor, fontSize: 13 }} tickLine={false} axisLine={false} />
+                <XAxis type="number" tick={{ fill: chartTextColor, fontSize: 13 }} tickFormatter={(value) => formatStudyTime(Number(value))} tickLine={false} axisLine={false} />
                 <YAxis dataKey="abbreviation" type="category" width={54} tick={{ fill: chartTextColor, fontSize: 14, fontWeight: 800 }} tickLine={false} axisLine={false} />
                 <Tooltip content={<SubjectStudyTooltip />} />
                 <Bar dataKey="minutes" radius={[0, 8, 8, 0]}>
-                  <LabelList dataKey="minutes" position="right" formatter={(value) => `${value ?? 0} min`} fill={chartTextColor} fontSize={13} fontWeight={800} />
+                  <LabelList dataKey="minutes" position="right" formatter={(value) => formatStudyTime(Number(value))} fill={chartTextColor} fontSize={13} fontWeight={800} />
                   {subjectData.map((entry) => (
                     <Cell key={entry.id} fill={entry.color} />
                   ))}
@@ -425,13 +426,13 @@ export default function ReportsPage() {
                       textAnchor={questionData.length > 10 ? "end" : "middle"}
                       height={questionData.length > 10 ? 58 : 38}
                     />
-                    <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickFormatter={(value) => formatStudyTime(Number(value))} tickLine={false} axisLine={false} />
                     <Tooltip content={<QuestionStudyTooltip />} />
                     <Bar dataKey="minutes" fill="#2563eb" radius={[8, 8, 0, 0]}>
                       <LabelList
                         dataKey="minutes"
                         position="top"
-                        formatter={(value) => `${value ?? 0} min`}
+                        formatter={(value) => formatStudyTime(Number(value))}
                         fill={chartTextColor}
                         fontSize={12}
                         fontWeight={800}
@@ -469,7 +470,7 @@ export default function ReportsPage() {
                         {item.subject}
                       </td>
                       <td className="py-3 pr-3 font-black text-slate-950 dark:text-slate-50">
-                        {item.minutes} min
+                        {formatStudyTime(item.minutes)}
                       </td>
                       <td className="py-3 pr-3 text-slate-600 dark:text-slate-300">
                         {item.reviewCount}
@@ -525,8 +526,10 @@ export default function ReportsPage() {
                   </h3>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
-                      <p className="font-black text-slate-950 dark:text-slate-50">{getTotalTimeForQuestion(data, question.id)}</p>
-                      <p className="font-semibold text-slate-500 dark:text-slate-400">min</p>
+                      <p className="font-black text-slate-950 dark:text-slate-50">
+                        {formatStudyTime(getTotalTimeForQuestion(data, question.id))}
+                      </p>
+                      <p className="font-semibold text-slate-500 dark:text-slate-400">studied</p>
                     </div>
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
                       <p className="font-black text-slate-950 dark:text-slate-50">{getReviewCount(data, question.id)}</p>

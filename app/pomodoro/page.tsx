@@ -7,15 +7,34 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
-import { Question, StudySession, StudySessionType } from "@/types/study";
+import { Question, StudySession, StudySessionType, Subject } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 import { getSessionDate } from "@/utils/studyMetrics";
 
-type TimerPhase = "work" | "short_break" | "long_break";
+type TimerMode = "normal" | "pomodoro";
+type TimerPhase = "normal" | "work" | "short_break" | "long_break";
+type TimerStatus = "idle" | "running" | "paused" | "completed";
 type TargetMode = "single" | "multiple" | "decide" | "later";
 type AllocationMode = "equal" | "manual";
 type ReviewSource = "completed" | "existing";
+
+type TimerSelection = {
+  targetMode: TargetMode;
+  subjectId: string;
+  questionIds: string[];
+};
+
+type StoredTimerState = {
+  mode: TimerMode;
+  status: TimerStatus;
+  phase: TimerPhase;
+  durationSeconds: number;
+  remainingSeconds: number;
+  startedAtMs?: number;
+  completedWorkCount: number;
+  selection: TimerSelection;
+};
 
 type PendingInterval = {
   sessionId?: string;
@@ -27,8 +46,11 @@ type PendingInterval = {
   type?: StudySessionType;
   note?: string;
   questionId?: string;
+  initialQuestionIds?: string[];
+  selection?: TimerSelection;
 };
 
+const storageKey = "revisio-active-timer-v2";
 const radius = 112;
 const circumference = 2 * Math.PI * radius;
 const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test", "summary"];
@@ -60,7 +82,12 @@ function playNotificationSound(enabled: boolean, sound: "beep" | "chime") {
   });
 }
 
+function clampPositiveInteger(value: number, fallback: number) {
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
 function getPhaseLabel(phase: TimerPhase) {
+  if (phase === "normal") return "Normal timer";
   if (phase === "work") return "Work";
   if (phase === "long_break") return "Long break";
   return "Short break";
@@ -82,135 +109,294 @@ function getEqualAllocations(questionIds: string[], totalMinutes: number) {
   }, {});
 }
 
+function getPomodoroPhaseDurationSeconds(settings: ReturnType<typeof useStudyStore>["data"]["settings"], phase: TimerPhase) {
+  if (phase === "long_break") return settings.pomodoroLongBreakMinutes * 60;
+  if (phase === "short_break") return settings.pomodoroShortBreakMinutes * 60;
+  return settings.pomodoroWorkMinutes * 60;
+}
+
+function getRemainingSeconds(timer: StoredTimerState, nowMs: number) {
+  if (timer.status === "running" && timer.startedAtMs) {
+    const elapsed = Math.floor((nowMs - timer.startedAtMs) / 1000);
+    return Math.max(0, timer.durationSeconds - elapsed);
+  }
+
+  return Math.max(0, timer.remainingSeconds);
+}
+
+function createDefaultSelection(subjects: Subject[]): TimerSelection {
+  return {
+    targetMode: "decide",
+    subjectId: subjects[0]?.id ?? "",
+    questionIds: []
+  };
+}
+
+function createTimerState(
+  mode: TimerMode,
+  durationSeconds: number,
+  selection: TimerSelection,
+  completedWorkCount = 0,
+  phase?: TimerPhase
+): StoredTimerState {
+  return {
+    mode,
+    status: "idle",
+    phase: phase ?? (mode === "normal" ? "normal" : "work"),
+    durationSeconds,
+    remainingSeconds: durationSeconds,
+    completedWorkCount,
+    selection
+  };
+}
+
+function isStoredTimerState(value: unknown): value is StoredTimerState {
+  if (!value || typeof value !== "object") return false;
+  const timer = value as Partial<StoredTimerState>;
+  return (
+    (timer.mode === "normal" || timer.mode === "pomodoro") &&
+    (timer.status === "idle" || timer.status === "running" || timer.status === "paused" || timer.status === "completed") &&
+    typeof timer.durationSeconds === "number" &&
+    typeof timer.remainingSeconds === "number" &&
+    Boolean(timer.selection)
+  );
+}
+
 export default function PomodoroPage() {
   const { data, deleteSession, hydrated, logSession, updateSession, updateSettings } = useStudyStore();
   const { showToast } = useToast();
-  const [phase, setPhase] = useState<TimerPhase>("work");
-  const [isRunning, setIsRunning] = useState(false);
-  const [hasStarted, setHasStarted] = useState(false);
-  const [completedWorkCount, setCompletedWorkCount] = useState(0);
-  const [targetMode, setTargetMode] = useState<TargetMode>("decide");
-  const [plannedQuestionIds, setPlannedQuestionIds] = useState<string[]>([]);
-  const [pendingInterval, setPendingInterval] = useState<PendingInterval | null>(null);
-  const sessionStartedAtRef = useRef<Date | null>(null);
-  const completedRef = useRef(false);
-
-  const durationMinutes =
-    phase === "work"
-      ? data.settings.pomodoroWorkMinutes
-      : phase === "long_break"
-        ? data.settings.pomodoroLongBreakMinutes
-        : data.settings.pomodoroShortBreakMinutes;
-  const duration = durationMinutes * 60;
-  const [secondsLeft, setSecondsLeft] = useState(duration);
-
-  useEffect(() => {
-    setSecondsLeft(duration);
-    setIsRunning(false);
-    setHasStarted(false);
-    completedRef.current = false;
-    sessionStartedAtRef.current = null;
-  }, [duration]);
-
-  const completeInterval = useCallback(() => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-    setIsRunning(false);
-    setHasStarted(false);
-    playNotificationSound(data.settings.soundEnabled, data.settings.notificationSound);
-    window.navigator.vibrate?.(120);
-
-    if (phase === "work") {
-      const endedAt = new Date();
-      const startedAt =
-        sessionStartedAtRef.current ??
-        new Date(endedAt.getTime() - data.settings.pomodoroWorkMinutes * 60 * 1000);
-      const nextCompletedCount = completedWorkCount + 1;
-      const nextBreak =
-        nextCompletedCount % data.settings.pomodoroLongBreakAfter === 0 ? "long_break" : "short_break";
-
-      setCompletedWorkCount(nextCompletedCount);
-      setPendingInterval({
-        date: toDateInputValue(endedAt),
-        startedAt: startedAt.toISOString(),
-        endedAt: endedAt.toISOString(),
-        durationMinutes: data.settings.pomodoroWorkMinutes,
-        source: "completed"
-      });
-      setPhase(nextBreak);
-      return;
-    }
-
-    setPhase("work");
-  }, [
-    completedWorkCount,
-    data.settings.notificationSound,
-    data.settings.pomodoroLongBreakAfter,
-    data.settings.pomodoroWorkMinutes,
-    data.settings.soundEnabled,
-    phase
-  ]);
-
-  useEffect(() => {
-    if (!isRunning) return;
-
-    const timer = window.setInterval(() => {
-      setSecondsLeft((seconds) => {
-        if (seconds <= 1) {
-          window.clearInterval(timer);
-          window.setTimeout(completeInterval, 0);
-          return 0;
-        }
-
-        return seconds - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [completeInterval, isRunning]);
-
-  function startOrResume() {
-    completedRef.current = false;
-
-    if (!sessionStartedAtRef.current && phase === "work") {
-      sessionStartedAtRef.current = new Date();
-    }
-
-    setIsRunning(true);
-    setHasStarted(true);
-  }
-
-  function reset() {
-    setIsRunning(false);
-    setSecondsLeft(duration);
-    setHasStarted(false);
-    completedRef.current = false;
-    sessionStartedAtRef.current = null;
-  }
-
-  function togglePlannedQuestion(questionId: string) {
-    setPlannedQuestionIds((current) =>
-      current.includes(questionId)
-        ? current.filter((id) => id !== questionId)
-        : [...current, questionId]
-    );
-  }
-
-  const minutes = Math.floor(secondsLeft / 60)
-    .toString()
-    .padStart(2, "0");
-  const seconds = (secondsLeft % 60).toString().padStart(2, "0");
-  const progress = duration ? (duration - secondsLeft) / duration : 0;
-  const dashOffset = circumference * (1 - progress);
-  const unassignedSessions = data.sessions.filter((session) => session.needsReview || !session.questionId);
+  const restoredRef = useRef(false);
+  const completionHandledRef = useRef(false);
   const sortedQuestions = useMemo(
     () => sortQuestionsBySubjectAndNumber(data.questions, data.subjects),
     [data.questions, data.subjects]
   );
+  const defaultSubjectId = data.subjects[0]?.id ?? "";
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [normalDurationInput, setNormalDurationInput] = useState("30");
+  const [pendingInterval, setPendingInterval] = useState<PendingInterval | null>(null);
+  const [timer, setTimer] = useState<StoredTimerState>(() =>
+    createTimerState("pomodoro", 25 * 60, createDefaultSelection([]))
+  );
+
+  useEffect(() => {
+    if (!hydrated || restoredRef.current) return;
+    restoredRef.current = true;
+
+    const fallbackSelection = createDefaultSelection(data.subjects);
+    const fallback = createTimerState(
+      "pomodoro",
+      getPomodoroPhaseDurationSeconds(data.settings, "work"),
+      fallbackSelection
+    );
+
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (isStoredTimerState(parsed)) {
+        const selection = {
+          ...fallbackSelection,
+          ...parsed.selection,
+          subjectId: parsed.selection.subjectId || fallbackSelection.subjectId,
+          questionIds: Array.isArray(parsed.selection.questionIds) ? parsed.selection.questionIds : []
+        };
+        setTimer({ ...parsed, selection });
+        setNormalDurationInput(String(Math.max(1, Math.round(parsed.durationSeconds / 60))));
+        return;
+      }
+    } catch {
+      window.localStorage.removeItem(storageKey);
+    }
+
+    setTimer(fallback);
+    setNormalDurationInput("30");
+  }, [data.settings, data.subjects, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !restoredRef.current) return;
+    window.localStorage.setItem(storageKey, JSON.stringify(timer));
+  }, [hydrated, timer]);
+
+  useEffect(() => {
+    if (timer.status !== "running") return;
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [timer.status]);
+
+  const secondsLeft = getRemainingSeconds(timer, nowMs);
+  const progress = timer.durationSeconds ? (timer.durationSeconds - secondsLeft) / timer.durationSeconds : 0;
+  const dashOffset = circumference * (1 - progress);
+  const displayMinutes = Math.floor(secondsLeft / 60).toString().padStart(2, "0");
+  const displaySeconds = (secondsLeft % 60).toString().padStart(2, "0");
+  const isBreak = timer.phase === "short_break" || timer.phase === "long_break";
+  const unassignedSessions = data.sessions.filter((session) => session.needsReview || !session.questionId);
   const reviewedSessions = data.sessions
     .filter((session) => !session.needsReview && session.questionId)
     .sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
     .slice(0, 8);
+
+  const completeTimer = useCallback(() => {
+    if (completionHandledRef.current || timer.status !== "running") return;
+    completionHandledRef.current = true;
+    playNotificationSound(data.settings.soundEnabled, data.settings.notificationSound);
+    window.navigator.vibrate?.(120);
+
+    const endedAtMs = (timer.startedAtMs ?? Date.now()) + timer.durationSeconds * 1000;
+    const startedAt = new Date(timer.startedAtMs ?? endedAtMs - timer.durationSeconds * 1000);
+    const endedAt = new Date(endedAtMs);
+
+    if (timer.mode === "normal" || timer.phase === "work") {
+      const durationMinutes = Math.max(1, Math.round(timer.durationSeconds / 60));
+      setPendingInterval({
+        date: toDateInputValue(startedAt),
+        startedAt: startedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
+        durationMinutes,
+        source: "completed",
+        initialQuestionIds:
+          timer.selection.targetMode === "single" || timer.selection.targetMode === "multiple"
+            ? timer.selection.questionIds
+            : [],
+        selection: timer.selection
+      });
+    }
+
+    if (timer.mode === "normal") {
+      setTimer((current) => ({ ...current, status: "completed", remainingSeconds: 0, startedAtMs: undefined }));
+      return;
+    }
+
+    if (timer.phase === "work") {
+      const nextCompletedCount = timer.completedWorkCount + 1;
+      const nextPhase =
+        nextCompletedCount % data.settings.pomodoroLongBreakAfter === 0 ? "long_break" : "short_break";
+      const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, nextPhase);
+      setTimer((current) => ({
+        ...current,
+        status: "idle",
+        phase: nextPhase,
+        durationSeconds: nextDuration,
+        remainingSeconds: nextDuration,
+        completedWorkCount: nextCompletedCount,
+        startedAtMs: undefined
+      }));
+      return;
+    }
+
+    const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, "work");
+    setTimer((current) => ({
+      ...current,
+      status: "idle",
+      phase: "work",
+      durationSeconds: nextDuration,
+      remainingSeconds: nextDuration,
+      startedAtMs: undefined
+    }));
+  }, [data.settings, timer]);
+
+  useEffect(() => {
+    if (timer.status === "running" && secondsLeft <= 0) {
+      completeTimer();
+    }
+  }, [completeTimer, secondsLeft, timer.status]);
+
+  function updateSelection(selection: TimerSelection) {
+    setTimer((current) => ({ ...current, selection }));
+  }
+
+  function switchMode(mode: TimerMode) {
+    if (timer.mode === mode) return;
+    const durationSeconds =
+      mode === "normal"
+        ? clampPositiveInteger(Number(normalDurationInput), 30) * 60
+        : getPomodoroPhaseDurationSeconds(data.settings, "work");
+    completionHandledRef.current = false;
+    setTimer(createTimerState(mode, durationSeconds, timer.selection));
+  }
+
+  function commitNormalDuration(value: number) {
+    const minutes = clampPositiveInteger(value, 30);
+    setNormalDurationInput(String(minutes));
+    setTimer((current) =>
+      current.mode === "normal" && current.status !== "running"
+        ? { ...current, durationSeconds: minutes * 60, remainingSeconds: minutes * 60, phase: "normal" }
+        : current
+    );
+  }
+
+  function startOrResume() {
+    const durationSeconds =
+      timer.mode === "normal"
+        ? clampPositiveInteger(Number(normalDurationInput), Math.max(1, Math.round(timer.durationSeconds / 60))) * 60
+        : timer.durationSeconds;
+
+    completionHandledRef.current = false;
+    setNowMs(Date.now());
+    setTimer((current) => {
+      if (current.status === "paused") {
+        const elapsedSeconds = current.durationSeconds - current.remainingSeconds;
+        return {
+          ...current,
+          status: "running",
+          startedAtMs: Date.now() - elapsedSeconds * 1000
+        };
+      }
+
+      return {
+        ...current,
+        status: "running",
+        durationSeconds,
+        remainingSeconds: durationSeconds,
+        startedAtMs: Date.now()
+      };
+    });
+  }
+
+  function pauseTimer() {
+    setTimer((current) => ({
+      ...current,
+      status: "paused",
+      remainingSeconds: getRemainingSeconds(current, Date.now()),
+      startedAtMs: undefined
+    }));
+  }
+
+  function resetTimer() {
+    completionHandledRef.current = false;
+    setPendingInterval(null);
+    const durationSeconds =
+      timer.mode === "normal"
+        ? clampPositiveInteger(Number(normalDurationInput), 30) * 60
+        : getPomodoroPhaseDurationSeconds(data.settings, timer.phase === "normal" ? "work" : timer.phase);
+    setTimer((current) => ({
+      ...current,
+      status: "idle",
+      durationSeconds,
+      remainingSeconds: durationSeconds,
+      startedAtMs: undefined
+    }));
+  }
+
+  function updatePomodoroSetting(key: "pomodoroWorkMinutes" | "pomodoroShortBreakMinutes" | "pomodoroLongBreakMinutes" | "pomodoroLongBreakAfter", value: number) {
+    const nextValue = clampPositiveInteger(value, data.settings[key]);
+    const nextSettings = {
+      ...data.settings,
+      [key]: nextValue,
+      ...(key === "pomodoroShortBreakMinutes" ? { pomodoroBreakMinutes: nextValue } : {})
+    };
+    updateSettings(nextSettings);
+    setTimer((current) => {
+      if (current.mode !== "pomodoro" || current.status === "running") return current;
+      const durationSeconds = getPomodoroPhaseDurationSeconds(nextSettings, current.phase);
+      return { ...current, durationSeconds, remainingSeconds: durationSeconds };
+    });
+  }
+
+  function clearCompletedTimer() {
+    completionHandledRef.current = false;
+    setPendingInterval(null);
+    resetTimer();
+  }
 
   return (
     <AppShell>
@@ -218,69 +404,65 @@ export default function PomodoroPage() {
         <LoadingState />
       ) : (
         <>
-          <PageHeader title="Pomodoro" eyebrow="Study timer" />
+          <PageHeader title="Timer" eyebrow="Study timer" />
+
+          <div className="mb-5 grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1 text-sm font-bold dark:border-slate-700 dark:bg-slate-950 sm:max-w-md">
+            <button
+              className={`rounded-md px-3 py-2 transition ${
+                timer.mode === "normal"
+                  ? "bg-blue-600 text-white dark:bg-blue-500"
+                  : "text-slate-600 dark:text-slate-300"
+              }`}
+              onClick={() => switchMode("normal")}
+            >
+              Normal timer
+            </button>
+            <button
+              className={`rounded-md px-3 py-2 transition ${
+                timer.mode === "pomodoro"
+                  ? "bg-blue-600 text-white dark:bg-blue-500"
+                  : "text-slate-600 dark:text-slate-300"
+              }`}
+              onClick={() => switchMode("pomodoro")}
+            >
+              Pomodoro timer
+            </button>
+          </div>
 
           <div className="grid gap-5 lg:grid-cols-[1fr_410px]">
             <section className="panel p-4 sm:p-6">
               <div className="mx-auto max-w-xl">
-                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70">
-                  <p className="text-sm font-black text-slate-950 dark:text-slate-50">Study target</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {[
-                      ["single", "One question"],
-                      ["multiple", "Multiple questions"],
-                      ["decide", "Decide after interval"],
-                      ["later", "Log later"]
-                    ].map(([value, label]) => (
-                      <button
-                        key={value}
-                        className={targetMode === value ? "btn-primary" : "btn-secondary"}
-                        onClick={() => setTargetMode(value as TargetMode)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {targetMode !== "decide" && targetMode !== "later" ? (
-                    <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
-                      {sortedQuestions.map((question) => {
-                        const checked = plannedQuestionIds.includes(question.id);
-                        return (
-                          <label key={question.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm font-semibold text-slate-700 dark:bg-slate-950 dark:text-slate-200">
-                            <input
-                              type={targetMode === "single" ? "radio" : "checkbox"}
-                              checked={checked}
-                              onChange={() =>
-                                targetMode === "single"
-                                  ? setPlannedQuestionIds([question.id])
-                                  : togglePlannedQuestion(question.id)
-                              }
-                              className="mt-1 accent-blue-600"
-                            />
-                            <span>{getQuestionLabel(question)}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </div>
+                <StudyTargetPicker
+                  subjects={data.subjects}
+                  questions={sortedQuestions}
+                  selection={timer.selection}
+                  onChange={updateSelection}
+                />
 
                 <div className="mt-5 grid place-items-center">
                   <div className="relative grid aspect-square w-full max-w-[320px] place-items-center">
                     <svg className="h-full w-full -rotate-90" viewBox="0 0 260 260" aria-hidden="true">
                       <circle cx="130" cy="130" r={radius} fill="none" stroke="currentColor" strokeWidth="16" className="text-slate-200 dark:text-slate-800" />
-                      <circle cx="130" cy="130" r={radius} fill="none" stroke={phase === "work" ? "#2563eb" : "#d97706"} strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" strokeWidth="16" className="transition-all duration-500" />
+                      <circle cx="130" cy="130" r={radius} fill="none" stroke={isBreak ? "#d97706" : "#2563eb"} strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" strokeWidth="16" className="transition-all duration-500" />
                     </svg>
                     <div className="absolute inset-0 grid place-items-center text-center">
                       <div>
                         <p className="text-sm font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
-                          {getPhaseLabel(phase)}
+                          {getPhaseLabel(timer.phase)}
                         </p>
                         <p className="mt-2 text-6xl font-black tabular-nums text-slate-950 dark:text-slate-50 sm:text-7xl">
-                          {minutes}:{seconds}
+                          {displayMinutes}:{displaySeconds}
                         </p>
                         <p className="mt-2 text-sm font-bold text-slate-500 dark:text-slate-400">
-                          Completed work intervals: {completedWorkCount}
+                          {timer.status === "running"
+                            ? "Running"
+                            : timer.status === "paused"
+                              ? "Paused"
+                              : timer.status === "completed"
+                                ? "Completed"
+                                : timer.mode === "pomodoro"
+                                  ? `Completed work intervals: ${timer.completedWorkCount}`
+                                  : "Ready"}
                         </p>
                       </div>
                     </div>
@@ -288,10 +470,10 @@ export default function PomodoroPage() {
                 </div>
 
                 <div className="mt-5 grid grid-cols-2 gap-2">
-                  <button className="btn-primary" onClick={isRunning ? () => setIsRunning(false) : startOrResume}>
-                    {isRunning ? "Pause" : hasStarted ? "Resume" : "Start"}
+                  <button className="btn-primary" onClick={timer.status === "running" ? pauseTimer : startOrResume}>
+                    {timer.status === "running" ? "Pause" : timer.status === "paused" ? "Resume" : "Start"}
                   </button>
-                  <button className="btn-secondary" onClick={reset}>
+                  <button className="btn-secondary" onClick={resetTimer}>
                     Reset
                   </button>
                 </div>
@@ -301,12 +483,22 @@ export default function PomodoroPage() {
             <section className="panel p-4 sm:p-5">
               <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Timer settings</h2>
               <div className="mt-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <NumberSetting label="Work" value={data.settings.pomodoroWorkMinutes} onChange={(value) => updateSettings({ ...data.settings, pomodoroWorkMinutes: value })} />
-                  <NumberSetting label="Short break" value={data.settings.pomodoroShortBreakMinutes} onChange={(value) => updateSettings({ ...data.settings, pomodoroShortBreakMinutes: value, pomodoroBreakMinutes: value })} />
-                  <NumberSetting label="Long break" value={data.settings.pomodoroLongBreakMinutes} onChange={(value) => updateSettings({ ...data.settings, pomodoroLongBreakMinutes: value })} />
-                  <NumberSetting label="Long after" value={data.settings.pomodoroLongBreakAfter} onChange={(value) => updateSettings({ ...data.settings, pomodoroLongBreakAfter: value })} />
-                </div>
+                {timer.mode === "normal" ? (
+                  <SmoothNumberInput
+                    label="Duration"
+                    value={normalDurationInput}
+                    suffix="min"
+                    onValueChange={setNormalDurationInput}
+                    onCommit={commitNormalDuration}
+                  />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberSetting label="Work" value={data.settings.pomodoroWorkMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroWorkMinutes", value)} />
+                    <NumberSetting label="Short break" value={data.settings.pomodoroShortBreakMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroShortBreakMinutes", value)} />
+                    <NumberSetting label="Long break" value={data.settings.pomodoroLongBreakMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroLongBreakMinutes", value)} />
+                    <NumberSetting label="Long after" value={data.settings.pomodoroLongBreakAfter} onCommit={(value) => updatePomodoroSetting("pomodoroLongBreakAfter", value)} />
+                  </div>
+                )}
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                   Notification sound
                   <select
@@ -386,17 +578,20 @@ export default function PomodoroPage() {
           {pendingInterval ? (
             <ReviewModal
               interval={pendingInterval}
+              subjects={data.subjects}
+              questions={sortedQuestions}
               initialQuestionIds={
                 pendingInterval.source === "existing"
                   ? pendingInterval.questionId
                     ? [pendingInterval.questionId]
                     : []
-                  : targetMode === "later" || targetMode === "decide"
-                    ? []
-                    : plannedQuestionIds
+                  : pendingInterval.initialQuestionIds ?? []
               }
-              questions={sortedQuestions}
               onClose={() => setPendingInterval(null)}
+              onSkip={() => {
+                clearCompletedTimer();
+                showToast("Timer finished without logging", "info");
+              }}
               onLogLater={(durationMinutes, type, note) => {
                 const endedAt = new Date(
                   new Date(pendingInterval.startedAt).getTime() + durationMinutes * 60 * 1000
@@ -419,10 +614,10 @@ export default function PomodoroPage() {
                     durationMinutes,
                     type,
                     needsReview: true,
-                    note: note || "Pomodoro interval to review later"
+                    note: note || "Timer session to assign later"
                   });
                 }
-                setPendingInterval(null);
+                clearCompletedTimer();
                 showToast("Session saved for later", "info");
               }}
               onSave={(sessions) => {
@@ -430,7 +625,7 @@ export default function PomodoroPage() {
                   deleteSession(pendingInterval.sessionId);
                 }
                 sessions.forEach(logSession);
-                setPendingInterval(null);
+                clearCompletedTimer();
                 showToast("Study session logged");
               }}
             />
@@ -441,12 +636,251 @@ export default function PomodoroPage() {
   );
 }
 
-function NumberSetting({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function SmoothNumberInput({
+  label,
+  value,
+  suffix,
+  disabled = false,
+  min = 1,
+  onValueChange,
+  onCommit
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+  disabled?: boolean;
+  min?: number;
+  onValueChange: (value: string) => void;
+  onCommit: (value: number) => void;
+}) {
+  function commit() {
+    const parsed = Number(value);
+    const next = Number.isFinite(parsed) && parsed >= min ? parsed : min;
+    onCommit(Math.round(next));
+  }
+
   return (
     <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
       {label}
-      <input className="field mt-1" min={1} type="number" value={value} onChange={(event) => onChange(Math.max(1, Number(event.target.value)))} />
+      <div className="mt-1 flex items-center gap-2">
+        <input
+          className="field"
+          disabled={disabled}
+          min={min}
+          step={1}
+          type="number"
+          value={value}
+          onBlur={commit}
+          onChange={(event) => onValueChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        {suffix ? <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{suffix}</span> : null}
+      </div>
     </label>
+  );
+}
+
+function NumberSetting({ label, value, onCommit }: { label: string; value: number; onCommit: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  return (
+    <SmoothNumberInput
+      label={label}
+      value={draft}
+      onValueChange={setDraft}
+      onCommit={(nextValue) => {
+        setDraft(String(nextValue));
+        onCommit(nextValue);
+      }}
+    />
+  );
+}
+
+function StudyTargetPicker({
+  subjects,
+  questions,
+  selection,
+  onChange
+}: {
+  subjects: Subject[];
+  questions: Question[];
+  selection: TimerSelection;
+  onChange: (selection: TimerSelection) => void;
+}) {
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const shouldShowSelectors = selection.targetMode === "single" || selection.targetMode === "multiple";
+  const subjectQuestions = questions.filter((question) => question.subjectId === selection.subjectId);
+  const selectedQuestions = selection.questionIds
+    .map((id) => questions.find((question) => question.id === id))
+    .filter((question): question is Question => Boolean(question));
+  const selectedLabels = selectedQuestions.map(getQuestionLabel);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!dropdownRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
+
+  function updateTargetMode(targetMode: TargetMode) {
+    onChange({
+      ...selection,
+      targetMode,
+      questionIds: targetMode === "single" ? selection.questionIds.slice(0, 1) : selection.questionIds
+    });
+    if (targetMode === "decide" || targetMode === "later") {
+      setOpen(false);
+    }
+  }
+
+  function updateSubject(subjectId: string) {
+    onChange({
+      ...selection,
+      subjectId,
+      questionIds:
+        selection.targetMode === "single"
+          ? selection.questionIds.filter((questionId) =>
+              questions.some((question) => question.id === questionId && question.subjectId === subjectId)
+            )
+          : selection.questionIds
+    });
+    setOpen(false);
+  }
+
+  function toggleQuestion(questionId: string) {
+    if (selection.targetMode === "single") {
+      onChange({ ...selection, questionIds: [questionId] });
+      setOpen(false);
+      return;
+    }
+
+    onChange({
+      ...selection,
+      questionIds: selection.questionIds.includes(questionId)
+        ? selection.questionIds.filter((id) => id !== questionId)
+        : [...selection.questionIds, questionId]
+    });
+  }
+
+  return (
+    <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70">
+      <p className="text-sm font-black text-slate-950 dark:text-slate-50">Study target</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {[
+          ["single", "One question"],
+          ["multiple", "Multiple questions"],
+          ["decide", "Decide after interval"],
+          ["later", "Log later"]
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            className={selection.targetMode === value ? "btn-primary" : "btn-secondary"}
+            type="button"
+            onClick={() => updateTargetMode(value as TargetMode)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {shouldShowSelectors ? (
+        <div className="mt-3 space-y-3">
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+            {selection.targetMode === "multiple" ? "Subject filter" : "Subject"}
+            <select className="field mt-1" value={selection.subjectId} onChange={(event) => updateSubject(event.target.value)}>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+
+      {shouldShowSelectors ? (
+        <div className="relative mt-3" ref={dropdownRef}>
+          <button
+            className="btn-secondary flex w-full items-center justify-between gap-3 text-left"
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+          >
+            <span className="truncate">
+              {selectedLabels.length
+                ? selection.targetMode === "multiple"
+                  ? `${selectedLabels.length} selected`
+                  : selectedLabels[0]
+                : "Select question"}
+            </span>
+            <span>{open ? "Close" : "Open"}</span>
+          </button>
+          {open ? (
+            <div className="absolute z-20 mt-2 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-soft dark:border-slate-700 dark:bg-slate-950">
+              {!subjectQuestions.length ? (
+                <div className="rounded-md bg-slate-50 p-3 text-sm font-semibold text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                  No questions in this subject.
+                </div>
+              ) : null}
+              {subjectQuestions.map((question) => {
+                const checked = selection.questionIds.includes(question.id);
+                return (
+                  <label key={question.id} className="flex items-start gap-2 rounded-md p-2 text-sm font-semibold text-slate-700 hover:bg-blue-50 dark:text-slate-200 dark:hover:bg-blue-500/10">
+                    <input
+                      type={selection.targetMode === "single" ? "radio" : "checkbox"}
+                      checked={checked}
+                      onChange={() => toggleQuestion(question.id)}
+                      className="mt-1 accent-blue-600"
+                    />
+                    <span>{getQuestionLabel(question)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
+          {selection.targetMode === "multiple" && selectedQuestions.length ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                Selected questions
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {selectedQuestions.map((question) => {
+                  const subject = subjects.find((item) => item.id === question.subjectId);
+                  return (
+                    <button
+                      key={question.id}
+                      className="rounded-md bg-slate-100 px-2 py-1 text-left text-xs font-bold text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                      type="button"
+                      onClick={() =>
+                        onChange({
+                          ...selection,
+                          questionIds: selection.questionIds.filter((id) => id !== question.id)
+                        })
+                      }
+                    >
+                      <span className="font-black">{subject?.abbreviation ?? subject?.name ?? "Subject"}</span>{" "}
+                      {getQuestionLabel(question)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -532,21 +966,21 @@ function RecentSessions({
           const question = questions.find((item) => item.id === session.questionId);
           return (
             <article key={session.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-black text-slate-950 dark:text-slate-50">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words whitespace-normal font-black text-slate-950 dark:text-slate-50">
                     {question ? getQuestionLabel(question) : "Deleted question"}
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     {session.durationMinutes} min · {sessionTypeLabels[session.type]} · {getSessionDate(session)}
                   </p>
                   {session.note ? (
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{session.note}</p>
+                    <p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">{session.note}</p>
                   ) : null}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button className="btn-primary" onClick={() => onEdit(session)}>Edit</button>
-                  <button className="btn-secondary" onClick={() => onDelete(session.id)}>Delete</button>
+                <div className="grid shrink-0 grid-cols-2 gap-2 sm:w-[184px]">
+                  <button className="btn-primary min-w-[86px]" onClick={() => onEdit(session)}>Edit</button>
+                  <button className="btn-secondary min-w-[86px]" onClick={() => onDelete(session.id)}>Delete</button>
                 </div>
               </div>
             </article>
@@ -560,31 +994,53 @@ function RecentSessions({
 function ReviewModal({
   interval,
   initialQuestionIds,
+  subjects,
   questions,
   onClose,
+  onSkip,
   onLogLater,
   onSave
 }: {
   interval: PendingInterval;
   initialQuestionIds: string[];
+  subjects: Subject[];
   questions: Question[];
   onClose: () => void;
+  onSkip: () => void;
   onLogLater: (durationMinutes: number, type: StudySessionType, note: string) => void;
   onSave: (sessions: Omit<StudySession, "id">[]) => void;
 }) {
+  const initialQuestion = questions.find((question) => initialQuestionIds.includes(question.id));
+  const [durationDraft, setDurationDraft] = useState(String(interval.durationMinutes));
   const [durationMinutes, setDurationMinutes] = useState(interval.durationMinutes);
+  const [subjectId, setSubjectId] = useState(initialQuestion?.subjectId ?? interval.selection?.subjectId ?? subjects[0]?.id ?? "");
   const [selectedIds, setSelectedIds] = useState<string[]>(initialQuestionIds);
   const [allocationMode, setAllocationMode] = useState<AllocationMode>("equal");
   const [allocations, setAllocations] = useState<Record<string, number>>(() =>
     getEqualAllocations(initialQuestionIds, interval.durationMinutes)
   );
+  const [allocationDrafts, setAllocationDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(getEqualAllocations(initialQuestionIds, interval.durationMinutes)).map(([questionId, minutes]) => [
+        questionId,
+        String(minutes)
+      ])
+    )
+  );
   const [type, setType] = useState<StudySessionType>(interval.type ?? "active_recall");
   const [note, setNote] = useState(interval.note ?? "");
   const [error, setError] = useState("");
+  const subjectQuestions = questions.filter((question) => question.subjectId === subjectId);
 
   useEffect(() => {
     if (allocationMode === "equal") {
-      setAllocations(getEqualAllocations(selectedIds, durationMinutes));
+      const nextAllocations = getEqualAllocations(selectedIds, durationMinutes);
+      setAllocations(nextAllocations);
+      setAllocationDrafts(
+        Object.fromEntries(
+          Object.entries(nextAllocations).map(([questionId, minutes]) => [questionId, String(minutes)])
+        )
+      );
     }
   }, [allocationMode, durationMinutes, selectedIds]);
 
@@ -601,7 +1057,7 @@ function ReviewModal({
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!selectedIds.length) {
-      setError("Select at least one question or choose log later.");
+      onLogLater(durationMinutes, type, note.trim());
       return;
     }
 
@@ -637,25 +1093,26 @@ function ReviewModal({
       <form onSubmit={handleSubmit} className="animate-enter max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">What did you study?</h2>
+            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Confirm study session</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Completed interval: {durationMinutes} min
+              Actual duration: {durationMinutes} min
             </p>
           </div>
           <button className="btn-secondary px-3" type="button" onClick={onClose}>Close</button>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Duration
-            <input
-              className="field mt-1"
-              min={1}
-              type="number"
-              value={durationMinutes}
-              onChange={(event) => setDurationMinutes(Math.max(1, Number(event.target.value)))}
-            />
-          </label>
+          <SmoothNumberInput
+            label="Duration"
+            value={durationDraft}
+            suffix="min"
+            onValueChange={setDurationDraft}
+            onCommit={(value) => {
+              const next = clampPositiveInteger(value, interval.durationMinutes);
+              setDurationDraft(String(next));
+              setDurationMinutes(next);
+            }}
+          />
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
             Study type
             <select className="field mt-1" value={type} onChange={(event) => setType(event.target.value as StudySessionType)}>
@@ -664,9 +1121,21 @@ function ReviewModal({
               ))}
             </select>
           </label>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Subject
+            <select
+              className="field mt-1"
+              value={subjectId}
+              onChange={(event) => {
+                setSubjectId(event.target.value);
+                setSelectedIds([]);
+              }}
+            >
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>{subject.name}</option>
+              ))}
+            </select>
+          </label>
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
             Split mode
             <select className="field mt-1" value={allocationMode} onChange={(event) => setAllocationMode(event.target.value as AllocationMode)}>
@@ -677,26 +1146,27 @@ function ReviewModal({
         </div>
 
         <div className="mt-4 max-h-64 space-y-2 overflow-y-auto pr-1">
-          {questions.map((question) => (
+          {subjectQuestions.map((question) => (
             <div key={question.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
               <label className="flex items-start gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                 <input type="checkbox" checked={selectedIds.includes(question.id)} onChange={() => toggleQuestion(question.id)} className="mt-1 accent-blue-600" />
                 <span>{getQuestionLabel(question)}</span>
               </label>
               {selectedIds.includes(question.id) ? (
-                <label className="mt-2 block text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Minutes
-                  <input
-                    className="field mt-1"
-                    disabled={allocationMode === "equal"}
-                    min={0}
-                    type="number"
-                    value={allocations[question.id] ?? 0}
-                    onChange={(event) =>
-                      setAllocations((current) => ({ ...current, [question.id]: Number(event.target.value) }))
-                    }
-                  />
-                </label>
+                <SmoothNumberInput
+                  label="Minutes"
+                  value={allocationDrafts[question.id] ?? String(allocations[question.id] ?? 0)}
+                  disabled={allocationMode === "equal"}
+                  min={0}
+                  onValueChange={(value) =>
+                    setAllocationDrafts((current) => ({ ...current, [question.id]: value }))
+                  }
+                  onCommit={(value) => {
+                    const nextValue = Math.max(0, value);
+                    setAllocationDrafts((current) => ({ ...current, [question.id]: String(nextValue) }));
+                    setAllocations((current) => ({ ...current, [question.id]: nextValue }));
+                  }}
+                />
               ) : null}
             </div>
           ))}
@@ -714,8 +1184,8 @@ function ReviewModal({
         {error ? <p className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{error}</p> : null}
 
         <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          <button className="btn-secondary" type="button" onClick={onSkip}>Skip logging</button>
           <button className="btn-secondary" type="button" onClick={() => onLogLater(durationMinutes, type, note.trim())}>Log later</button>
-          <button className="btn-secondary" type="button" onClick={onClose}>Cancel</button>
           <button className="btn-primary" type="submit">Save session</button>
         </div>
       </form>

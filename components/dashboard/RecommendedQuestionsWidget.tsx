@@ -1,5 +1,6 @@
 import { difficultyLabels, difficultyStyles, statusLabels, statusStyles } from "@/data/studyData";
 import { Question, Subject } from "@/types/study";
+import { formatStudyTime } from "@/utils/timeFormat";
 import { SubjectPill } from "@/components/study/SubjectPill";
 
 type RecommendedQuestion = {
@@ -49,7 +50,7 @@ export function RecommendedQuestionsWidget({ items, subjects }: RecommendedQuest
                 {reviewCount === 0
                   ? "Never studied"
                   : `${daysSinceLastSeen ?? 0} days since review`}{" "}
-                · {reviewCount} reviews · {totalStudyTime} min total
+                · {reviewCount} reviews · {formatStudyTime(totalStudyTime)} total
               </p>
             </article>
           );
