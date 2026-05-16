@@ -3,13 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { navItems } from "@/lib/navigation";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { useTheme } from "@/components/ui/ThemeProvider";
-import { useToast } from "@/components/ui/ToastProvider";
 import { WorkspaceSwitcher } from "@/components/workspaces/WorkspaceSwitcher";
 
 function isTypingTarget(target: EventTarget | null) {
@@ -25,9 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { signOut, user } = useAuth();
   const { dismissLocalMigration, migrateLocalDataToCloud, pendingLocalMigration, storageError, syncStatus } = useStudyStore();
-  const { theme, toggleTheme } = useTheme();
-  const { showToast } = useToast();
-  const [showShortcuts, setShowShortcuts] = useState(false);
+  const { toggleTheme } = useTheme();
 
   const syncLabel =
     syncStatus === "loading"
@@ -58,22 +55,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (key === "m") {
         event.preventDefault();
         toggleTheme();
-        showToast("Theme updated", "info");
-      }
-
-      if (event.key === "?") {
-        event.preventDefault();
-        setShowShortcuts((current) => !current);
-      }
-
-      if (event.key === "Escape") {
-        setShowShortcuts(false);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [router, showToast, toggleTheme]);
+  }, [router, toggleTheme]);
 
   return (
     <div className="min-h-screen">
@@ -117,9 +104,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <div className="absolute inset-x-4 bottom-5 space-y-2">
-          <div className="rounded-lg bg-slate-50 p-3 text-xs font-semibold text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-            Signed in as
+        <div className="absolute inset-x-4 bottom-5 space-y-3">
+          <div className="rounded-lg border border-slate-200/80 bg-slate-50 p-3 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            <span className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+              Signed in as
+            </span>
             <span className="mt-1 block truncate text-sm font-black text-slate-800 dark:text-slate-100">
               {user?.email}
             </span>
@@ -127,12 +116,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               {syncLabel}
             </span>
           </div>
-          <button className="btn-secondary w-full" onClick={toggleTheme}>
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </button>
-          <button className="btn-secondary w-full" onClick={() => setShowShortcuts(true)}>
-            Shortcuts
-          </button>
           <button className="btn-secondary w-full" onClick={signOut}>
             Logout
           </button>
@@ -151,9 +134,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="h-auto w-[126px] shrink-0"
             />
           </Link>
-          <button className="btn-secondary px-3" onClick={toggleTheme} aria-label="Toggle color theme">
-            {theme === "dark" ? "Light" : "Dark"}
-          </button>
           <button className="btn-secondary px-3" onClick={signOut}>
             Logout
           </button>
@@ -192,34 +172,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </div>
       </nav>
-
-      {showShortcuts ? (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/50 px-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="animate-enter w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Keyboard shortcuts</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Use these when you are not typing in a form.</p>
-              </div>
-              <button className="btn-secondary px-3" onClick={() => setShowShortcuts(false)}>
-                Close
-              </button>
-            </div>
-            <div className="mt-5 space-y-2">
-              {navItems.map((item) => (
-                <div key={item.href} className="flex items-center justify-between rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-500/10">
-                  <span className="font-semibold text-slate-700 dark:text-slate-200">{item.label}</span>
-                  <span className="rounded-md bg-white px-2 py-1 font-black text-blue-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-blue-200 dark:ring-blue-500/30">{item.shortcut}</span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-500/10">
-                <span className="font-semibold text-slate-700 dark:text-slate-200">Toggle theme</span>
-                <span className="rounded-md bg-white px-2 py-1 font-black text-blue-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-blue-200 dark:ring-blue-500/30">M</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <ConfirmDialog
         open={pendingLocalMigration}

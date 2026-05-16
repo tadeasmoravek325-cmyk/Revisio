@@ -7,7 +7,9 @@ import { ExamTopicsImportDialog } from "@/components/import/ExamTopicsImportDial
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useTheme } from "@/components/ui/ThemeProvider";
 import { useToast } from "@/components/ui/ToastProvider";
+import { navItems } from "@/lib/navigation";
 import { backupService } from "@/services/backupService";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { AppState } from "@/types/study";
@@ -40,6 +42,7 @@ export default function SettingsPage() {
     syncStatus,
     workspaces
   } = useStudyStore();
+  const { theme, toggleTheme } = useTheme();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<AppState | null>(null);
@@ -213,6 +216,51 @@ export default function SettingsPage() {
           <button className="btn-secondary shrink-0" onClick={signOut}>
             Logout
           </button>
+        </div>
+      </section>
+
+      <section className="panel mt-5 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Appearance</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Switch between light and dark mode for this device.
+            </p>
+          </div>
+          <button
+            className="btn-secondary shrink-0"
+            onClick={() => {
+              toggleTheme();
+              showToast("Theme updated", "info");
+            }}
+          >
+            {theme === "dark" ? "Use light mode" : "Use dark mode"}
+          </button>
+        </div>
+      </section>
+
+      <section className="panel mt-5 p-4 sm:p-5">
+        <div>
+          <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Keyboard shortcuts</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            Use these when you are not typing in a form.
+          </p>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {navItems.map((item) => (
+            <div key={item.href} className="flex items-center justify-between rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-500/10">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">{item.label}</span>
+              <span className="rounded-md bg-white px-2 py-1 font-black text-blue-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-blue-200 dark:ring-blue-500/30">
+                {item.shortcut}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3 text-sm dark:bg-blue-500/10">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">Toggle theme</span>
+            <span className="rounded-md bg-white px-2 py-1 font-black text-blue-700 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-blue-200 dark:ring-blue-500/30">
+              M
+            </span>
+          </div>
         </div>
       </section>
 

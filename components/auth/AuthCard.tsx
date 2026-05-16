@@ -18,12 +18,12 @@ export function AuthCard({
     <main className="grid min-h-screen place-items-center px-4 py-8">
       <section className="panel w-full max-w-md p-5 sm:p-6">
         <Image
-          src="/revisio-logo-tight.svg"
-          alt="Revisio - Final exam preparation"
-          width={190}
-          height={65}
+          src="/revisio-sign-cropped.svg"
+          alt="Revisio"
+          width={96}
+          height={96}
           priority
-          className="mx-auto h-auto w-[190px]"
+          className="mx-auto h-auto w-20 sm:w-24"
         />
         <p className="mt-6 text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
           {eyebrow}
