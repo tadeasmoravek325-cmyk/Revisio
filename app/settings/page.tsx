@@ -32,9 +32,12 @@ export default function SettingsPage() {
     activeWorkspaceId,
     automaticBackupsEnabled,
     hydrated,
+    reloadFromCloud,
     replaceStudyState,
     resetAppData,
     setAutomaticBackupsEnabled,
+    storageError,
+    syncStatus,
     workspaces
   } = useStudyStore();
   const { showToast } = useToast();
@@ -61,6 +64,17 @@ export default function SettingsPage() {
       setSnapshots(backupService.listSnapshots());
     }
   }, [hydrated]);
+
+  const syncLabel =
+    syncStatus === "loading"
+      ? "Loading cloud data"
+      : syncStatus === "syncing"
+        ? "Syncing"
+        : syncStatus === "synced"
+          ? "Synced"
+          : syncStatus === "offline_cache"
+            ? "Offline/local cache"
+            : "Sync failed";
 
   function handleExport() {
     const backupJson = backupService.createExport(appState);
@@ -118,6 +132,26 @@ export default function SettingsPage() {
     <AppShell>
       <PageHeader title="Settings" eyebrow="Data safety" />
 
+      <section className="panel mb-5 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Cloud sync</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Status: <span className="font-bold text-slate-700 dark:text-slate-200">{syncLabel}</span>
+            </p>
+          </div>
+          <button className="btn-secondary shrink-0" onClick={reloadFromCloud}>
+            Reload from cloud
+          </button>
+        </div>
+      </section>
+
+      {storageError ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100">
+          Cloud sync needs attention: {storageError}
+        </div>
+      ) : null}
+
       <div className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
         <section className="panel p-4 sm:p-5">
           <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Backup and restore</h2>
@@ -173,7 +207,7 @@ export default function SettingsPage() {
             <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Account</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
               Signed in as <span className="font-bold text-slate-700 dark:text-slate-200">{user?.email}</span>.
-              Study data is still stored locally in this browser for now.
+              Study data is synced to Supabase cloud storage for this account.
             </p>
           </div>
           <button className="btn-secondary shrink-0" onClick={signOut}>
@@ -236,6 +270,7 @@ export default function SettingsPage() {
         <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Reset app data</h2>
         <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
           Resetting permanently removes all local Revisio data from this browser, including workspaces, subjects, questions, sessions, settings, reports, and local backup snapshots. Export a backup first if you want to keep anything.
+          Cloud workspace data for this account will also be deleted.
         </p>
         <button className="mt-4 rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 active:scale-[0.98]" onClick={() => setShowResetConfirm(true)}>
           Reset app data
@@ -245,7 +280,7 @@ export default function SettingsPage() {
       <ConfirmDialog
         open={showImportConfirm}
         title="Import backup?"
-        message={`This will overwrite the current local Revisio data with ${pendingImport?.workspaces.length ?? 0} workspace${pendingImport?.workspaces.length === 1 ? "" : "s"} from the selected backup.`}
+        message={`This will replace the current Revisio cloud data with ${pendingImport?.workspaces.length ?? 0} workspace${pendingImport?.workspaces.length === 1 ? "" : "s"} from the selected backup.`}
         confirmLabel="Import"
         onCancel={() => {
           setShowImportConfirm(false);
@@ -266,7 +301,7 @@ export default function SettingsPage() {
       <ConfirmDialog
         open={showResetConfirm}
         title="Reset app data?"
-        message="This permanently deletes all local Revisio data and clears Revisio-related localStorage keys. It cannot be undone unless you already have an exported backup."
+        message="This permanently deletes all Revisio cloud data for this account and clears Revisio-related local data in this browser. It cannot be undone unless you already have an exported backup."
         confirmLabel="Delete all data"
         destructive
         onCancel={() => setShowResetConfirm(false)}

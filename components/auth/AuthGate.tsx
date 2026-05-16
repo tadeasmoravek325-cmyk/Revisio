@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { getSupabaseClient } from "@/lib/supabaseClient";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const publicRoutes = new Set(["/login", "/signup"]);
 
@@ -28,80 +28,52 @@ function AuthLoadingScreen({ error }: { error?: string }) {
 export function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [authenticated, setAuthenticated] = useState(false);
-  const [error, setError] = useState("");
+  const { authError, loading, user } = useAuth();
+  const [timedOut, setTimedOut] = useState(false);
+  const isPublicRoute = publicRoutes.has(pathname);
 
   useEffect(() => {
-    let active = true;
-    let subscription: { unsubscribe: () => void } | undefined;
-
-    async function checkSession() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const supabase = await getSupabaseClient();
-        const { data, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        if (!active) {
-          return;
-        }
-
-        setAuthenticated(Boolean(data.session));
-        subscription = supabase.auth.onAuthStateChange((_event: string, session: unknown) => {
-          setAuthenticated(Boolean(session));
-        }).data.subscription;
-      } catch (sessionError) {
-        if (active) {
-          setAuthenticated(false);
-          setError(sessionError instanceof Error ? sessionError.message : "Could not check authentication.");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    checkSession();
-
-    return () => {
-      active = false;
-      subscription?.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (loading) {
+    if (!loading) {
+      setTimedOut(false);
       return;
     }
 
-    const isPublicRoute = publicRoutes.has(pathname);
+    const timeout = window.setTimeout(() => {
+      setTimedOut(true);
+    }, 3000);
 
-    if (!authenticated && !isPublicRoute) {
+    return () => window.clearTimeout(timeout);
+  }, [loading]);
+
+  useEffect(() => {
+    if (isPublicRoute) {
+      return;
+    }
+
+    if ((!loading || timedOut) && !user) {
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Revisio auth] redirect to /login", { pathname, timedOut });
+      }
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
+  }, [isPublicRoute, loading, pathname, router, timedOut, user]);
 
-    if (authenticated && isPublicRoute) {
+  useEffect(() => {
+    if (user && isPublicRoute) {
       router.replace("/");
     }
-  }, [authenticated, loading, pathname, router]);
+  }, [isPublicRoute, router, user]);
 
-  if (loading) {
-    return <AuthLoadingScreen error={error} />;
+  if (isPublicRoute) {
+    return children;
   }
 
-  if (!authenticated && !publicRoutes.has(pathname)) {
-    return <AuthLoadingScreen error={error} />;
+  if (loading && !timedOut) {
+    return <AuthLoadingScreen error={authError} />;
   }
 
-  if (authenticated && publicRoutes.has(pathname)) {
-    return <AuthLoadingScreen />;
+  if (!user) {
+    return <AuthLoadingScreen error={authError} />;
   }
 
   return children;

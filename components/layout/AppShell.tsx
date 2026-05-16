@@ -5,7 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { navItems } from "@/lib/navigation";
+import { useStudyStore } from "@/hooks/useStudyStore";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { useToast } from "@/components/ui/ToastProvider";
 import { WorkspaceSwitcher } from "@/components/workspaces/WorkspaceSwitcher";
@@ -21,10 +23,22 @@ function isTypingTarget(target: EventTarget | null) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { authError, loading: authLoading, signOut, user } = useAuth();
+  const { signOut, user } = useAuth();
+  const { dismissLocalMigration, migrateLocalDataToCloud, pendingLocalMigration, storageError, syncStatus } = useStudyStore();
   const { theme, toggleTheme } = useTheme();
   const { showToast } = useToast();
   const [showShortcuts, setShowShortcuts] = useState(false);
+
+  const syncLabel =
+    syncStatus === "loading"
+      ? "Loading cloud data"
+      : syncStatus === "syncing"
+        ? "Syncing"
+        : syncStatus === "synced"
+          ? "Synced"
+          : syncStatus === "offline_cache"
+            ? "Offline/local cache"
+            : "Sync failed";
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -60,25 +74,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router, showToast, toggleTheme]);
-
-  if (authLoading || (!user && pathname !== "/login" && pathname !== "/signup")) {
-    return (
-      <div className="grid min-h-screen place-items-center px-4">
-        <div className="panel w-full max-w-md p-5">
-          <p className="text-sm font-black uppercase tracking-[0.12em] text-blue-700 dark:text-blue-300">
-            Checking session
-          </p>
-          <div className="skeleton mt-4 h-3 w-full" />
-          <div className="skeleton mt-3 h-3 w-2/3" />
-          {authError ? (
-            <p className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">
-              {authError}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen">
@@ -128,6 +123,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="mt-1 block truncate text-sm font-black text-slate-800 dark:text-slate-100">
               {user?.email}
             </span>
+            <span className="mt-2 block text-[11px] font-black uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">
+              {syncLabel}
+            </span>
           </div>
           <button className="btn-secondary w-full" onClick={toggleTheme}>
             {theme === "dark" ? "Light mode" : "Dark mode"}
@@ -166,6 +164,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:ml-64 lg:px-8 lg:py-8">
+        {storageError ? (
+          <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100">
+            Cloud sync failed: {storageError}
+          </div>
+        ) : null}
         <div className="animate-enter">{children}</div>
       </main>
 
@@ -217,6 +220,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={pendingLocalMigration}
+        title="Import local study data?"
+        message="We found local study data on this device, but your cloud account is empty. Import it to your Supabase cloud account?"
+        confirmLabel="Import to cloud"
+        onCancel={dismissLocalMigration}
+        onConfirm={migrateLocalDataToCloud}
+      />
     </div>
   );
 }

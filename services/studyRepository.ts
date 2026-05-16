@@ -19,5 +19,5 @@ export const localStudyRepository: StudyRepository = {
   }
 };
 
-// Future Supabase integration can implement StudyRepository with async API calls,
-// then the hook can swap repositories without changing page components.
+// Local storage is now only an optional cache and backup import/export source.
+// Supabase cloud storage is implemented in supabaseStudyRepository.

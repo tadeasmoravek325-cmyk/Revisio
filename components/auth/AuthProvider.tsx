@@ -14,11 +14,18 @@ type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   authError: string;
+  clearAuthState: () => void;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const publicRoutes = new Set(["/login", "/signup"]);
+
+function logAuth(message: string, details?: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "development") {
+    console.info(`[Revisio auth] ${message}`, details ?? {});
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -45,8 +52,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setUser(data.session?.user ?? null);
+        logAuth(data.session ? "auth session found" : "auth session not found", {
+          userId: data.session?.user?.id
+        });
         subscription = supabase.auth.onAuthStateChange((_event: string, session: any) => {
           setUser(session?.user ?? null);
+          setLoading(false);
+          logAuth(session ? "auth state session found" : "auth state session not found", {
+            event: _event,
+            userId: session?.user?.id
+          });
         }).data.subscription;
       } catch (error) {
         if (active) {
@@ -75,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isPublicRoute = publicRoutes.has(pathname);
 
     if (!user && !isPublicRoute) {
+      logAuth("redirect to /login", { pathname });
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
 
@@ -83,11 +99,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loading, pathname, router, user]);
 
-  async function signOut() {
-    const supabase = await getSupabaseClient();
-    await supabase.auth.signOut();
+  function clearAuthState() {
     setUser(null);
+    setLoading(false);
+  }
+
+  async function signOut() {
+    logAuth("logout started", { userId: user?.id });
+    clearAuthState();
     router.replace("/login");
+
+    try {
+      const supabase = await getSupabaseClient();
+      await supabase.auth.signOut();
+      logAuth("logout completed", { userId: user?.id });
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Logout could not be completed.");
+      logAuth("logout failed", {
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   }
 
   const value = useMemo(
@@ -95,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       authError,
+      clearAuthState,
       signOut
     }),
     [authError, loading, user]

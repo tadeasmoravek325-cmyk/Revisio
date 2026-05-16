@@ -1,9 +1,15 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { emptyAppState, initialAppState, initialData } from "@/data/studyData";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { emptyAppState, initialData } from "@/data/studyData";
 import { backupService } from "@/services/backupService";
 import { localStudyRepository } from "@/services/studyRepository";
+import {
+  createCloudEntityId,
+  normalizeStateForCloud,
+  supabaseStudyRepository
+} from "@/services/supabaseStudyRepository";
 import {
   AppData,
   AppState,
@@ -13,7 +19,6 @@ import {
   Subject,
   Workspace
 } from "@/types/study";
-import { createId } from "@/utils/id";
 import {
   getDaysSinceLastSeen as getDaysSinceLastSeenFromData,
   getLastSeen as getLastSeenFromData,
@@ -30,6 +35,7 @@ type ImportedExamQuestionInput = {
   questionNumber: number;
   questionTitle: string;
 };
+type SyncStatus = "loading" | "synced" | "syncing" | "failed" | "offline_cache";
 
 type StudyStoreValue = {
   data: StudyWorkspace;
@@ -38,6 +44,9 @@ type StudyStoreValue = {
   activeWorkspace?: StudyWorkspace;
   hasWorkspaces: boolean;
   hydrated: boolean;
+  storageError: string;
+  syncStatus: SyncStatus;
+  pendingLocalMigration: boolean;
   addWorkspace: (input: WorkspaceInput) => void;
   updateWorkspace: (id: string, patch: Partial<WorkspaceInput>) => void;
   deleteWorkspace: (id: string) => void;
@@ -54,6 +63,9 @@ type StudyStoreValue = {
   updateSettings: (settings: AppData["settings"]) => void;
   automaticBackupsEnabled: boolean;
   setAutomaticBackupsEnabled: (enabled: boolean) => void;
+  reloadFromCloud: () => void;
+  migrateLocalDataToCloud: () => void;
+  dismissLocalMigration: () => void;
   replaceStudyState: (nextState: AppState) => void;
   resetAppData: () => void;
   resetDemoData: () => void;
@@ -66,6 +78,7 @@ type StudyStoreValue = {
 };
 
 const StudyStoreContext = createContext<StudyStoreValue | undefined>(undefined);
+const migrationDismissedKeyPrefix = "revisio-cloud-migration-dismissed";
 
 const emptyWorkspacePlaceholder: StudyWorkspace = {
   id: "",
@@ -84,7 +97,7 @@ function createEmptyWorkspace(input: WorkspaceInput): StudyWorkspace {
   const examDate = input.examDate || initialData.settings.examDate;
 
   return {
-    id: createId("workspace"),
+    id: createCloudEntityId(),
     name: input.name.trim(),
     description: input.description.trim(),
     examDate,
@@ -112,27 +125,235 @@ function updateWorkspaceData(
   };
 }
 
+function getStudyStateCounts(state: AppState) {
+  return state.workspaces.reduce(
+    (counts, workspace) => ({
+      workspaces: counts.workspaces + 1,
+      subjects: counts.subjects + workspace.subjects.length,
+      questions: counts.questions + workspace.questions.length,
+      sessions: counts.sessions + workspace.sessions.length
+    }),
+    { workspaces: 0, subjects: 0, questions: 0, sessions: 0 }
+  );
+}
+
+function logStudySync(message: string, details: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "development") {
+    console.info(`[Revisio cloud sync] ${message}`, details);
+  }
+}
+
+function getMigrationDismissedKey(userId: string) {
+  return `${migrationDismissedKeyPrefix}:${userId}`;
+}
+
 export function StudyStoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(initialAppState);
+  const { loading: authLoading, user } = useAuth();
+  const [state, setState] = useState<AppState>(emptyAppState);
   const [hydrated, setHydrated] = useState(false);
+  const [storageError, setStorageError] = useState("");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
+  const [pendingLocalMigration, setPendingLocalMigration] = useState(false);
   const [automaticBackupsEnabled, setAutomaticBackupsEnabledState] = useState(false);
+  const loadRunRef = useRef(0);
+  const stateRef = useRef<AppState>(emptyAppState);
 
   useEffect(() => {
-    setState(localStudyRepository.load());
-    setAutomaticBackupsEnabledState(backupService.getAutomaticBackupsEnabled());
-    setHydrated(true);
-  }, []);
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
-    if (hydrated) {
-      if (state.workspaces.length) {
-        localStudyRepository.save(state);
-        backupService.createSnapshot(state);
+    if (authLoading) {
+      return;
+    }
+
+    let active = true;
+    const runId = loadRunRef.current + 1;
+    loadRunRef.current = runId;
+
+    async function loadStudyData() {
+      setHydrated(false);
+      setStorageError("");
+      setSyncStatus("loading");
+      setPendingLocalMigration(false);
+      setAutomaticBackupsEnabledState(backupService.getAutomaticBackupsEnabled());
+
+      if (!user) {
+        setState(emptyAppState);
+        setSyncStatus("synced");
+        setHydrated(true);
+        return;
+      }
+
+      try {
+        const cloudState = await supabaseStudyRepository.load();
+        const cloudCounts = getStudyStateCounts(cloudState);
+        const localState = localStudyRepository.load();
+        const localCounts = getStudyStateCounts(localState);
+        const migrationDismissed =
+          typeof window !== "undefined" &&
+          window.localStorage.getItem(getMigrationDismissedKey(user.id)) === "true";
+        const shouldOfferLocalMigration =
+          !cloudState.workspaces.length && localState.workspaces.length && !migrationDismissed;
+
+        if (shouldOfferLocalMigration) {
+          setPendingLocalMigration(true);
+        }
+
+        logStudySync("Loaded account data", {
+          userId: user.id,
+          source: "supabase",
+          finalStateSource: "supabase",
+          ...cloudCounts,
+          localWorkspacesFound: localCounts.workspaces,
+          cloudWorkspaceCount: cloudCounts.workspaces,
+          localWorkspaceCount: localCounts.workspaces,
+          localMigrationOffered: shouldOfferLocalMigration,
+          localMigrationSkipped:
+            cloudState.workspaces.length > 0 || !localState.workspaces.length || migrationDismissed
+        });
+
+        if (active && loadRunRef.current === runId) {
+          setState(cloudState);
+          if (!shouldOfferLocalMigration) {
+            localStudyRepository.save(cloudState);
+          }
+          setSyncStatus("synced");
+        }
+      } catch (error) {
+        if (active && loadRunRef.current === runId) {
+          setStorageError(error instanceof Error ? error.message : "Cloud study data could not be loaded.");
+          setState(emptyAppState);
+          setSyncStatus("failed");
+          logStudySync("Cloud load failed, localStorage ignored for authenticated user", {
+            userId: user.id,
+            finalStateSource: "empty_after_cloud_error",
+            loadedDataSource: "none",
+            cloudWorkspaceCount: 0,
+            localWorkspacesDetected: getStudyStateCounts(localStudyRepository.load()).workspaces,
+            error: error instanceof Error ? error.message : "Unknown error"
+          });
+        }
+      } finally {
+        if (active && loadRunRef.current === runId) {
+          setHydrated(true);
+        }
+      }
+    }
+
+    loadStudyData();
+
+    return () => {
+      active = false;
+    };
+  }, [authLoading, user]);
+
+  async function persistState(nextState: AppState) {
+    if (!user) {
+      return;
+    }
+
+    setSyncStatus("syncing");
+    setStorageError("");
+    logStudySync("save started", {
+      userId: user.id,
+      ...getStudyStateCounts(nextState)
+    });
+
+    try {
+      const savedState = nextState.workspaces.length
+        ? await supabaseStudyRepository.save(nextState)
+        : (await supabaseStudyRepository.clear(), emptyAppState);
+      setState(savedState);
+      if (savedState.workspaces.length) {
+        localStudyRepository.save(savedState);
+        setPendingLocalMigration(false);
       } else {
         localStudyRepository.clear();
       }
+      backupService.createSnapshot(savedState);
+      setSyncStatus("synced");
+      logStudySync("Saved to Supabase", {
+        userId: user.id,
+        ...getStudyStateCounts(savedState)
+      });
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : "Cloud study data could not be saved.");
+      setSyncStatus("failed");
+      logStudySync("Supabase save failed", {
+        userId: user.id,
+        exactErrorMessage: error instanceof Error ? error.message : "Unknown error",
+        error
+      });
     }
-  }, [hydrated, state]);
+  }
+
+  function commitState(updater: (current: AppState) => AppState) {
+    const nextState = updater(stateRef.current);
+    persistState(nextState);
+  }
+
+  async function reloadFromCloud() {
+    if (!user) {
+      return;
+    }
+
+    setSyncStatus("loading");
+    setStorageError("");
+
+    try {
+      const cloudState = await supabaseStudyRepository.load();
+      setState(cloudState);
+      localStudyRepository.save(cloudState);
+      setPendingLocalMigration(false);
+      setSyncStatus("synced");
+      logStudySync("Manual reload from cloud", {
+        userId: user.id,
+        ...getStudyStateCounts(cloudState)
+      });
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : "Cloud study data could not be loaded.");
+      setSyncStatus("failed");
+    }
+  }
+
+  async function migrateLocalDataToCloud() {
+    if (!user) {
+      return;
+    }
+
+    try {
+      setSyncStatus("syncing");
+      const localState = localStudyRepository.load();
+      const savedState = await supabaseStudyRepository.save(localState);
+      setState(savedState);
+      localStudyRepository.save(savedState);
+      setPendingLocalMigration(false);
+      window.localStorage.setItem(getMigrationDismissedKey(user.id), "true");
+      setSyncStatus("synced");
+      logStudySync("Local data migrated to Supabase", {
+        userId: user.id,
+        finalStateSource: "manual_local_migration",
+        cloudWorkspaceCount: getStudyStateCounts(savedState).workspaces,
+        localWorkspaceCount: getStudyStateCounts(localState).workspaces,
+        ...getStudyStateCounts(savedState)
+      });
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : "Local data could not be imported to cloud.");
+      setSyncStatus("failed");
+    }
+  }
+
+  function dismissLocalMigration() {
+    if (user && typeof window !== "undefined") {
+      window.localStorage.setItem(getMigrationDismissedKey(user.id), "true");
+    }
+    setPendingLocalMigration(false);
+    logStudySync("Local migration dismissed", {
+      userId: user?.id,
+      ...getStudyStateCounts(stateRef.current)
+    });
+  }
 
   const activeWorkspace =
     state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ??
@@ -143,13 +364,13 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
     () => ({
       addWorkspace(input: WorkspaceInput) {
         const workspace = createEmptyWorkspace(input);
-        setState((current) => ({
+        commitState((current) => ({
           activeWorkspaceId: workspace.id,
           workspaces: [...current.workspaces, workspace]
         }));
       },
       updateWorkspace(id: string, patch: Partial<WorkspaceInput>) {
-        setState((current) => ({
+        commitState((current) => ({
           ...current,
           workspaces: current.workspaces.map((workspace) => {
             if (workspace.id !== id) {
@@ -174,7 +395,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         }));
       },
       deleteWorkspace(id: string) {
-        setState((current) => {
+        commitState((current) => {
           if (current.workspaces.length <= 1) {
             return current;
           }
@@ -194,7 +415,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       addSubject(input: Omit<Subject, "id">) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             subjects: [
@@ -203,14 +424,14 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
                 ...input,
                 name: input.name.trim(),
                 abbreviation: input.abbreviation.trim(),
-                id: createId("subject")
+                id: createCloudEntityId()
               }
             ]
           }))
         );
       },
       updateSubject(id: string, patch: Partial<Subject>) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             subjects: workspace.subjects.map((subject) =>
@@ -230,7 +451,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         let subjectsCreated = 0;
         let questionsCreated = 0;
 
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => {
             const subjects = [...workspace.subjects];
             const questions = [...workspace.questions];
@@ -250,7 +471,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
 
               if (!subject) {
                 subject = {
-                  id: createId("subject"),
+                  id: createCloudEntityId(),
                   name: subjectName,
                   abbreviation,
                   color: "#2563eb"
@@ -274,7 +495,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
               }
 
               questions.push({
-                id: createId("question"),
+                id: createCloudEntityId(),
                 subjectId: subject.id,
                 number: topic.questionNumber,
                 title: topic.questionTitle.trim(),
@@ -301,14 +522,14 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         return { subjectsCreated, questionsCreated };
       },
       addQuestion(input: Omit<Question, "id" | "createdAt" | "totalStudyTime" | "reviewCount">) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             questions: [
               ...workspace.questions,
               {
                 ...input,
-                id: createId("question"),
+                id: createCloudEntityId(),
                 totalStudyTime: 0,
                 reviewCount: 0,
                 createdAt: new Date().toISOString()
@@ -318,7 +539,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       updateQuestion(id: string, patch: Partial<Question>) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             questions: workspace.questions.map((question) =>
@@ -328,7 +549,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteQuestion(id: string) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             questions: workspace.questions.filter((question) => question.id !== id),
@@ -339,10 +560,10 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       logSession(input: Omit<StudySession, "id">) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
-            sessions: [{ ...input, id: createId("session") }, ...workspace.sessions],
+            sessions: [{ ...input, id: createCloudEntityId() }, ...workspace.sessions],
             questions: workspace.questions.map((question) =>
               !input.needsReview && input.questionId && question.id === input.questionId
                 ? {
@@ -356,7 +577,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       updateSession(id: string, patch: Partial<StudySession>) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             sessions: workspace.sessions.map((session) =>
@@ -366,7 +587,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteSession(id: string) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             sessions: workspace.sessions.filter((session) => session.id !== id)
@@ -374,7 +595,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       updateSettings(settings: AppData["settings"]) {
-        setState((current) =>
+        commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             examDate: settings.examDate,
@@ -392,26 +613,31 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
           });
         }
       },
+      reloadFromCloud,
+      migrateLocalDataToCloud,
+      dismissLocalMigration,
       replaceStudyState(nextState: AppState) {
-        setState(nextState);
+        persistState(normalizeStateForCloud(nextState));
       },
       resetAppData() {
         localStudyRepository.clear();
         backupService.clearAllBackupData();
         setAutomaticBackupsEnabledState(false);
-        setState(emptyAppState);
+        persistState(emptyAppState);
       },
       resetDemoData() {
-        setState((current) =>
-          updateWorkspaceData(current, (workspace) => ({
-            ...workspace,
-            ...initialData,
-            examDate: initialData.settings.examDate
-          }))
+        commitState((current) =>
+          normalizeStateForCloud(
+            updateWorkspaceData(current, (workspace) => ({
+              ...workspace,
+              ...initialData,
+              examDate: initialData.settings.examDate
+            }))
+          )
         );
       }
     }),
-    []
+    [user]
   );
 
   const helpers = useMemo(
@@ -447,10 +673,24 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       automaticBackupsEnabled,
       hasWorkspaces: state.workspaces.length > 0,
       hydrated,
+      storageError,
+      syncStatus,
+      pendingLocalMigration,
       ...actions,
       ...helpers
     }),
-    [actions, activeWorkspace, automaticBackupsEnabled, helpers, hydrated, state.activeWorkspaceId, state.workspaces]
+    [
+      actions,
+      activeWorkspace,
+      automaticBackupsEnabled,
+      helpers,
+      hydrated,
+      pendingLocalMigration,
+      state.activeWorkspaceId,
+      state.workspaces,
+      storageError,
+      syncStatus
+    ]
   );
 
   return <StudyStoreContext.Provider value={value}>{children}</StudyStoreContext.Provider>;
