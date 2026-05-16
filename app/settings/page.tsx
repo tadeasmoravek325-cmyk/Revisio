@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { AppShell } from "@/components/layout/AppShell";
 import { ExamTopicsImportDialog } from "@/components/import/ExamTopicsImportDialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -26,6 +27,7 @@ function formatDateTime(value?: string) {
 }
 
 export default function SettingsPage() {
+  const { signOut, user } = useAuth();
   const {
     activeWorkspaceId,
     automaticBackupsEnabled,
@@ -164,6 +166,21 @@ export default function SettingsPage() {
           </div>
         </section>
       </div>
+
+      <section className="panel mt-5 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Account</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Signed in as <span className="font-bold text-slate-700 dark:text-slate-200">{user?.email}</span>.
+              Study data is still stored locally in this browser for now.
+            </p>
+          </div>
+          <button className="btn-secondary shrink-0" onClick={signOut}>
+            Logout
+          </button>
+        </div>
+      </section>
 
       <section className="panel mt-5 p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

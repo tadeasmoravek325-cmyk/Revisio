@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { navItems } from "@/lib/navigation";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -20,6 +21,7 @@ function isTypingTarget(target: EventTarget | null) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { authError, loading: authLoading, signOut, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { showToast } = useToast();
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -58,6 +60,25 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router, showToast, toggleTheme]);
+
+  if (authLoading || (!user && pathname !== "/login" && pathname !== "/signup")) {
+    return (
+      <div className="grid min-h-screen place-items-center px-4">
+        <div className="panel w-full max-w-md p-5">
+          <p className="text-sm font-black uppercase tracking-[0.12em] text-blue-700 dark:text-blue-300">
+            Checking session
+          </p>
+          <div className="skeleton mt-4 h-3 w-full" />
+          <div className="skeleton mt-3 h-3 w-2/3" />
+          {authError ? (
+            <p className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">
+              {authError}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -102,11 +123,20 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="absolute inset-x-4 bottom-5 space-y-2">
+          <div className="rounded-lg bg-slate-50 p-3 text-xs font-semibold text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            Signed in as
+            <span className="mt-1 block truncate text-sm font-black text-slate-800 dark:text-slate-100">
+              {user?.email}
+            </span>
+          </div>
           <button className="btn-secondary w-full" onClick={toggleTheme}>
             {theme === "dark" ? "Light mode" : "Dark mode"}
           </button>
           <button className="btn-secondary w-full" onClick={() => setShowShortcuts(true)}>
             Shortcuts
+          </button>
+          <button className="btn-secondary w-full" onClick={signOut}>
+            Logout
           </button>
         </div>
       </aside>
@@ -125,6 +155,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <button className="btn-secondary px-3" onClick={toggleTheme} aria-label="Toggle color theme">
             {theme === "dark" ? "Light" : "Dark"}
+          </button>
+          <button className="btn-secondary px-3" onClick={signOut}>
+            Logout
           </button>
         </div>
         <div className="px-4 pb-3">
