@@ -1,11 +1,11 @@
-import Image from "next/image";
+import { RevisioLogoImage } from "@/components/branding/RevisioLogoImage";
 
 export function LoadingState({ label = "Loading study data" }: { label?: string }) {
   return (
     <div className="space-y-4">
       <div className="panel p-5">
         <div className="flex items-center gap-3">
-          <Image src="/revisio-icon.svg" alt="Revisio" width={32} height={32} className="h-8 w-8 rounded-md" />
+          <RevisioLogoImage lightSrc="/revisio-icon-withoutbackground.png" alt="Revisio" width={32} height={32} className="h-8 w-8 rounded-md object-contain" />
           <p className="text-sm font-black uppercase tracking-[0.12em] text-blue-700 dark:text-blue-300">{label}</p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { RevisioLogoImage } from "@/components/branding/RevisioLogoImage";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { navItems } from "@/lib/navigation";
 import { useStudyStore } from "@/hooks/useStudyStore";
@@ -69,8 +69,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="shrink-0">
             <div className="-mx-3 flex w-64 justify-center py-5">
               <Link href="/" className="block rounded-lg transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
-                <Image
-                  src="/revisio-logo-tight.svg"
+                <RevisioLogoImage
+                  lightSrc="/revisio-logo-tight.svg"
+                  darkSrc="/revisio-logo-tight-darkmode.svg"
                   alt="Revisio - Final exam preparation"
                   width={193}
                   height={66}
@@ -129,8 +130,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:hidden">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center">
-            <Image
-              src="/revisio-full-lockup.svg"
+            <RevisioLogoImage
+              lightSrc="/revisio-full-lockup.svg"
               alt="Revisio - Final exam preparation"
               width={126}
               height={84}

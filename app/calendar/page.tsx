@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+import { SessionForm } from "@/components/study/SessionForm";
 import { SubjectPill } from "@/components/study/SubjectPill";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
@@ -62,11 +63,14 @@ function getSessionsForDate(sessions: StudySession[], date: string) {
 }
 
 export default function CalendarPage() {
-  const { data, deleteSession, hydrated, updateSession } = useStudyStore();
+  const { data, deleteSession, hydrated, logSession, updateSession } = useStudyStore();
   const { showToast } = useToast();
   const today = toDateInputValue(new Date());
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(today);
+  const [showLogSession, setShowLogSession] = useState(false);
+  const [shouldSpanLogSession, setShouldSpanLogSession] = useState(true);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState("");
   const [deleteSessionId, setDeleteSessionId] = useState("");
   const [editSubjectId, setEditSubjectId] = useState("");
@@ -75,6 +79,8 @@ export default function CalendarPage() {
   const [editDuration, setEditDuration] = useState(25);
   const [editType, setEditType] = useState<StudySessionType>("active_recall");
   const [editNote, setEditNote] = useState("");
+  const calendarRef = useRef<HTMLElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
 
   const calendarDays = useMemo(() => getCalendarDays(visibleMonth), [visibleMonth]);
   const monthKey = getMonthKey(visibleMonth);
@@ -87,6 +93,45 @@ export default function CalendarPage() {
   const editingSession = data.sessions.find((session) => session.id === editingSessionId);
   const sessionToDelete = data.sessions.find((session) => session.id === deleteSessionId);
   const editSubjectQuestions = sortedQuestions.filter((question) => question.subjectId === editSubjectId);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const updateLayout = () => setIsDesktopLayout(mediaQuery.matches);
+
+    updateLayout();
+    mediaQuery.addEventListener("change", updateLayout);
+    return () => mediaQuery.removeEventListener("change", updateLayout);
+  }, []);
+
+  useEffect(() => {
+    const calendarElement = calendarRef.current;
+    const sidebarElement = sidebarRef.current;
+
+    if (!calendarElement || !sidebarElement) {
+      return;
+    }
+
+    const measuredCalendarElement = calendarElement;
+    const measuredSidebarElement = sidebarElement;
+
+    function updatePlacement() {
+      const calendarHeight = measuredCalendarElement.getBoundingClientRect().height;
+      const sidebarHeight = measuredSidebarElement.getBoundingClientRect().height;
+      setShouldSpanLogSession(sidebarHeight <= calendarHeight + 1);
+    }
+
+    updatePlacement();
+
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(measuredCalendarElement);
+    observer.observe(measuredSidebarElement);
+    window.addEventListener("resize", updatePlacement);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updatePlacement);
+    };
+  }, [selectedSessions.length, showLogSession]);
 
   function moveMonth(delta: number) {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
@@ -145,79 +190,111 @@ export default function CalendarPage() {
     showToast("Session deleted", "warning");
   }
 
+  function renderLogSessionForm() {
+    return (
+      <div id="calendar-log-session">
+        <SessionForm subjects={data.subjects} questions={data.questions} onSubmit={logSession} />
+      </div>
+    );
+  }
+
   return (
     <AppShell>
       {!hydrated ? (
         <LoadingState />
       ) : (
         <>
-      <PageHeader title="Calendar" eyebrow="Study rhythm" />
+      <PageHeader title="Calendar" eyebrow="Study rhythm">
+        <button
+          className="btn-secondary"
+          onClick={() => {
+            setShowLogSession((value) => {
+              const nextValue = !value;
+              if (nextValue) {
+                window.setTimeout(() => {
+                  document.getElementById("calendar-log-session")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                  });
+                }, 0);
+              }
+              return nextValue;
+            });
+          }}
+        >
+          Log session
+        </button>
+      </PageHeader>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
-        <section className="panel overflow-hidden">
-          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-            <div>
-              <h2 className="text-xl font-black text-slate-950 dark:text-slate-50">{getMonthTitle(visibleMonth)}</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Tap a day to inspect study sessions.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex">
-              <button className="btn-secondary" onClick={() => moveMonth(-1)}>
-                Previous
-              </button>
-              <button className="btn-secondary" onClick={() => moveMonth(1)}>
-                Next
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
-            {weekdayLabels.map((day) => (
-              <div key={day} className="px-1 py-2 text-center text-[11px] font-black uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400 sm:text-xs">
-                {day}
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-5">
+          <section ref={calendarRef} className="panel overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+              <div>
+                <h2 className="text-xl font-black text-slate-950 dark:text-slate-50">{getMonthTitle(visibleMonth)}</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Tap a day to inspect study sessions.</p>
               </div>
-            ))}
-          </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <button className="btn-secondary" onClick={() => moveMonth(-1)}>
+                  Previous
+                </button>
+                <button className="btn-secondary" onClick={() => moveMonth(1)}>
+                  Next
+                </button>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800">
-            {calendarDays.map((date) => {
-              const dateKey = toDateInputValue(date);
-              const daySessions = getSessionsForDate(data.sessions, dateKey);
-              const minutes = daySessions.reduce((sum, session) => sum + session.durationMinutes, 0);
-              const isCurrentMonth = getMonthKey(date) === monthKey;
-              const isSelected = selectedDate === dateKey;
-              const isToday = today === dateKey;
+            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+              {weekdayLabels.map((day) => (
+                <div key={day} className="px-1 py-2 text-center text-[11px] font-black uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400 sm:text-xs">
+                  {day}
+                </div>
+              ))}
+            </div>
 
-              return (
-                <button
-                  key={dateKey}
-                  className={`min-h-[72px] p-1 text-left transition sm:min-h-[104px] sm:p-2 ${getIntensityClass(minutes)} ${
-                    isCurrentMonth ? "" : "opacity-45"
-                  } ${isSelected ? "ring-2 ring-inset ring-blue-700 dark:ring-blue-300" : ""}`}
-                  onClick={() => setSelectedDate(dateKey)}
-                >
-                  <span className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-black sm:text-sm">{date.getDate()}</span>
-                    {isToday ? (
-                      <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-black text-white dark:bg-blue-500">
-                        Today
+            <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800">
+              {calendarDays.map((date) => {
+                const dateKey = toDateInputValue(date);
+                const daySessions = getSessionsForDate(data.sessions, dateKey);
+                const minutes = daySessions.reduce((sum, session) => sum + session.durationMinutes, 0);
+                const isCurrentMonth = getMonthKey(date) === monthKey;
+                const isSelected = selectedDate === dateKey;
+                const isToday = today === dateKey;
+
+                return (
+                  <button
+                    key={dateKey}
+                    className={`min-h-[72px] p-1 text-left transition sm:min-h-[104px] sm:p-2 ${getIntensityClass(minutes)} ${
+                      isCurrentMonth ? "" : "opacity-45"
+                    } ${isSelected ? "ring-2 ring-inset ring-blue-700 dark:ring-blue-300" : ""}`}
+                    onClick={() => setSelectedDate(dateKey)}
+                  >
+                    <span className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-black sm:text-sm">{date.getDate()}</span>
+                      {isToday ? (
+                        <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-black text-white dark:bg-blue-500">
+                          Today
+                        </span>
+                      ) : null}
+                    </span>
+                    {minutes > 0 ? (
+                      <span className="mt-2 block text-xs font-black sm:text-sm">{minutes} min</span>
+                    ) : null}
+                    {daySessions.length ? (
+                      <span className="mt-1 block text-[11px] font-bold opacity-80">
+                        {daySessions.length} session{daySessions.length === 1 ? "" : "s"}
                       </span>
                     ) : null}
-                  </span>
-                  {minutes > 0 ? (
-                    <span className="mt-2 block text-xs font-black sm:text-sm">{minutes} min</span>
-                  ) : null}
-                  {daySessions.length ? (
-                    <span className="mt-1 block text-[11px] font-bold opacity-80">
-                      {daySessions.length} session{daySessions.length === 1 ? "" : "s"}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
-        <aside className="panel p-4 sm:p-5">
+          {showLogSession && isDesktopLayout && !shouldSpanLogSession ? renderLogSessionForm() : null}
+        </div>
+
+        <aside ref={sidebarRef} className="panel self-start p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">
@@ -281,6 +358,12 @@ export default function CalendarPage() {
             ) : null}
           </div>
         </aside>
+
+        {showLogSession && (!isDesktopLayout || shouldSpanLogSession) ? (
+          <div className={isDesktopLayout && shouldSpanLogSession ? "lg:col-span-2" : ""}>
+            {renderLogSessionForm()}
+          </div>
+        ) : null}
       </div>
       {editingSession ? (
         <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/50 px-4 backdrop-blur-sm" role="dialog" aria-modal="true">

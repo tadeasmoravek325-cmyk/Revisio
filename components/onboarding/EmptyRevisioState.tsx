@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { RevisioLogoImage } from "@/components/branding/RevisioLogoImage";
 import { ExamTopicsImportDialog } from "@/components/import/ExamTopicsImportDialog";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -34,13 +34,13 @@ export function EmptyRevisioState() {
 
   return (
     <section className="panel mx-auto max-w-3xl p-6 text-center sm:p-8">
-      <Image
-        src="/revisio-icon.svg"
+      <RevisioLogoImage
+        lightSrc="/revisio-icon-withoutbackground.png"
         alt="Revisio"
         width={72}
         height={72}
         priority
-        className="mx-auto h-[72px] w-[72px] rounded-2xl"
+        className="mx-auto h-[72px] w-[72px] rounded-2xl object-contain"
       />
       <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
         Welcome to Revisio

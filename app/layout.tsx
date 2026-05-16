@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   title: "Revisio",
   description: "Track study preparation for final exams.",
   icons: {
-    icon: "/revisio-icon.svg",
-    shortcut: "/revisio-icon.svg",
-    apple: "/revisio-icon.svg"
+    icon: "/revisio-favicon.png",
+    shortcut: "/revisio-favicon.png",
+    apple: "/revisio-favicon.png"
   }
 };
 

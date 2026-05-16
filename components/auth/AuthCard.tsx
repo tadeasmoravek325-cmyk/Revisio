@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { ReactNode } from "react";
+import { RevisioLogoImage } from "@/components/branding/RevisioLogoImage";
 
 export function AuthCard({
   eyebrow,
@@ -17,8 +17,9 @@ export function AuthCard({
   return (
     <main className="grid min-h-screen place-items-center px-4 py-8">
       <section className="panel w-full max-w-md p-5 sm:p-6">
-        <Image
-          src="/revisio-sign-cropped.svg"
+        <RevisioLogoImage
+          lightSrc="/revisio-sign-cropped.svg"
+          darkSrc="/revisio-sign-cropped-darkmode.svg"
           alt="Revisio"
           width={96}
           height={96}
