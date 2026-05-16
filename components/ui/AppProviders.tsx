@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { AuthGate } from "@/components/auth/AuthGate";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { StudyStoreProvider } from "@/hooks/useStudyStore";
 import { ThemeProvider } from "./ThemeProvider";
@@ -11,7 +12,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
     <ThemeProvider>
       <ToastProvider>
         <AuthProvider>
-          <StudyStoreProvider>{children}</StudyStoreProvider>
+          <AuthGate>
+            <StudyStoreProvider>{children}</StudyStoreProvider>
+          </AuthGate>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>
