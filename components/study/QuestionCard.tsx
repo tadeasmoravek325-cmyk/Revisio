@@ -21,6 +21,7 @@ import {
 } from "@/types/study";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
+import { createLocalDateTime, toDateInputValue } from "@/utils/date";
 import { SubjectPill } from "./SubjectPill";
 
 const statusOptions: QuestionStatus[] = ["unknown", "partial", "known"];
@@ -47,7 +48,7 @@ function formatLastSeen(value?: string) {
     return "Not seen yet";
   }
 
-  return new Date(value).toLocaleDateString("en-US", {
+  return createLocalDateTime(value).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric"
@@ -65,6 +66,7 @@ function createFinishedSession(
 
   return {
     questionId,
+    date: toDateInputValue(endedAt),
     startedAt: startedAt.toISOString(),
     endedAt: endedAt.toISOString(),
     durationMinutes: minutes,

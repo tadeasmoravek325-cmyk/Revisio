@@ -25,13 +25,14 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { difficultyLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { Question, StudySession, Subject } from "@/types/study";
-import { addDays, toDateInputValue } from "@/utils/date";
+import { addDays, createLocalDateTime, toDateInputValue } from "@/utils/date";
 import { compareQuestionsBySubjectAndNumber, parseQuestionNumber } from "@/utils/questionSorting";
 import {
   getAverageStudyMinutesPerDay,
   getDaysSinceLastSeen,
   getLastSeen,
   getReviewCount,
+  getSessionDate,
   getStudiedQuestionCount,
   getTotalStudyMinutes,
   getTotalTimeForQuestion
@@ -89,7 +90,7 @@ function formatLastReviewed(value?: string, daysSinceLastSeen?: number) {
     return `${daysSinceLastSeen} days ago`;
   }
 
-  return new Date(value).toLocaleDateString("en-US", {
+  return createLocalDateTime(value).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric"
@@ -102,7 +103,7 @@ function getStudyTimeByDay(sessions: StudySession[]) {
   return Array.from({ length: 14 }, (_, index) => {
     const date = toDateInputValue(addDays(today, index - 13));
     const minutes = sessions
-      .filter((session) => session.startedAt.slice(0, 10) === date)
+      .filter((session) => getSessionDate(session) === date)
       .reduce((sum, session) => sum + session.durationMinutes, 0);
 
     return {
@@ -117,7 +118,7 @@ function getStudyStreaks(sessions: StudySession[]) {
   const studyDays = new Set(
     sessions
       .filter((session) => session.durationMinutes > 0)
-      .map((session) => session.startedAt.slice(0, 10))
+      .map((session) => getSessionDate(session))
   );
 
   let current = 0;

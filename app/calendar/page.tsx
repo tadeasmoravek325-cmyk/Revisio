@@ -12,6 +12,7 @@ import { useStudyStore } from "@/hooks/useStudyStore";
 import { StudySession, StudySessionType } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
+import { getSessionDate } from "@/utils/studyMetrics";
 
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test", "summary"];
@@ -57,7 +58,7 @@ function getIntensityClass(minutes: number) {
 }
 
 function getSessionsForDate(sessions: StudySession[], date: string) {
-  return sessions.filter((session) => session.startedAt.slice(0, 10) === date);
+  return sessions.filter((session) => getSessionDate(session) === date);
 }
 
 export default function CalendarPage() {
@@ -96,7 +97,7 @@ export default function CalendarPage() {
     setEditingSessionId(session.id);
     setEditSubjectId(question?.subjectId ?? data.subjects[0]?.id ?? "");
     setEditQuestionId(question?.id ?? "");
-    setEditDate(session.startedAt.slice(0, 10));
+    setEditDate(getSessionDate(session));
     setEditDuration(session.durationMinutes);
     setEditType(session.type);
     setEditNote(session.note ?? "");
@@ -122,6 +123,7 @@ export default function CalendarPage() {
 
     updateSession(editingSession.id, {
       questionId: editQuestionId || undefined,
+      date: editDate,
       startedAt: startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
       durationMinutes: editDuration,

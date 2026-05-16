@@ -43,6 +43,7 @@ create table if not exists public.study_sessions (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   question_id uuid references public.questions(id) on delete set null,
+  session_date date not null default current_date,
   started_at timestamptz not null,
   ended_at timestamptz not null,
   duration_minutes integer not null default 0,
@@ -57,6 +58,7 @@ create index if not exists subjects_workspace_id_idx on public.subjects(workspac
 create index if not exists questions_subject_id_idx on public.questions(subject_id);
 create index if not exists study_sessions_workspace_id_idx on public.study_sessions(workspace_id);
 create index if not exists study_sessions_question_id_idx on public.study_sessions(question_id);
+create index if not exists study_sessions_session_date_idx on public.study_sessions(session_date);
 
 alter table public.workspaces enable row level security;
 alter table public.subjects enable row level security;

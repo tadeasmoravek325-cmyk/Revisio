@@ -64,61 +64,65 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/90 px-3 pb-5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
-        <div className="-mx-3 flex w-64 justify-center py-5">
-          <Link href="/" className="block rounded-lg transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
-            <Image
-              src="/revisio-logo-tight.svg"
-              alt="Revisio - Final exam preparation"
-              width={193}
-              height={66}
-              priority
-              className="h-auto w-[193px] shrink-0"
-            />
-          </Link>
-        </div>
-
-        <div>
-          <WorkspaceSwitcher />
-        </div>
-
-        <nav className="mt-5 space-y-1">
-          {navItems.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-bold transition ${
-                  active
-                    ? "bg-blue-600 text-white shadow-sm shadow-blue-900/10 dark:bg-blue-500 dark:text-white"
-                    : "text-slate-600 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-100"
-                }`}
-              >
-                <span>{item.label}</span>
-                <span className={`rounded-md px-2 py-0.5 text-[11px] ${active ? "bg-white/20" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>
-                  {item.shortcut}
-                </span>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-64 overflow-y-auto border-r border-slate-200/80 bg-white/90 px-3 pb-5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:block">
+        <div className="flex min-h-full flex-col">
+          <div className="shrink-0">
+            <div className="-mx-3 flex w-64 justify-center py-5">
+              <Link href="/" className="block rounded-lg transition hover:bg-blue-50 dark:hover:bg-blue-500/10">
+                <Image
+                  src="/revisio-logo-tight.svg"
+                  alt="Revisio - Final exam preparation"
+                  width={193}
+                  height={66}
+                  priority
+                  className="h-auto w-[193px] shrink-0"
+                />
               </Link>
-            );
-          })}
-        </nav>
+            </div>
 
-        <div className="absolute inset-x-4 bottom-5 space-y-3">
-          <div className="rounded-lg border border-slate-200/80 bg-slate-50 p-3 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-            <span className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
-              Signed in as
-            </span>
-            <span className="mt-1 block truncate text-sm font-black text-slate-800 dark:text-slate-100">
-              {user?.email}
-            </span>
-            <span className="mt-2 block text-[11px] font-black uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">
-              {syncLabel}
-            </span>
+            <WorkspaceSwitcher />
           </div>
-          <button className="btn-secondary w-full" onClick={signOut}>
-            Logout
-          </button>
+
+          <nav className="mt-5 space-y-1">
+            {navItems.map((item) => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-bold transition ${
+                    active
+                      ? "bg-blue-600 text-white shadow-sm shadow-blue-900/10 dark:bg-blue-500 dark:text-white"
+                      : "text-slate-600 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300 dark:hover:bg-blue-500/10 dark:hover:text-blue-100"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  <span className={`rounded-md px-2 py-0.5 text-[11px] ${active ? "bg-white/20" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>
+                    {item.shortcut}
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="min-h-5 flex-1" />
+
+          <div className="mt-5 shrink-0 space-y-3">
+            <div className="rounded-lg border border-slate-200/80 bg-slate-50 p-3 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+              <span className="block text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+                Signed in as
+              </span>
+              <span className="mt-1 block truncate text-sm font-black text-slate-800 dark:text-slate-100">
+                {user?.email}
+              </span>
+              <span className="mt-2 block text-[11px] font-black uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">
+                {syncLabel}
+              </span>
+            </div>
+            <button className="btn-secondary w-full" onClick={signOut}>
+              Logout
+            </button>
+          </div>
         </div>
       </aside>
 

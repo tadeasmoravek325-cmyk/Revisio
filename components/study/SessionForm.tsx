@@ -48,6 +48,7 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
 
     onSubmit({
       questionId: resolvedQuestionId,
+      date: studyDate,
       startedAt: startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
       durationMinutes: minutes,

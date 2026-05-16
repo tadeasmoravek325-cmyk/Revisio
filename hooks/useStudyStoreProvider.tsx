@@ -27,6 +27,7 @@ import {
   getReviewCount as getReviewCountFromData,
   getTotalTimeForQuestion as getTotalTimeForQuestionFromData
 } from "@/utils/studyMetrics";
+import { getDateOnlyValue } from "@/utils/date";
 
 type WorkspaceInput = Pick<Workspace, "name" | "description" | "examDate" | "color">;
 type ImportedExamQuestionInput = {
@@ -560,10 +561,11 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       logSession(input: Omit<StudySession, "id">) {
+        const sessionDate = getDateOnlyValue(input.date) || getDateOnlyValue(input.startedAt);
         commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
-            sessions: [{ ...input, id: createCloudEntityId() }, ...workspace.sessions],
+            sessions: [{ ...input, date: sessionDate, id: createCloudEntityId() }, ...workspace.sessions],
             questions: workspace.questions.map((question) =>
               !input.needsReview && input.questionId && question.id === input.questionId
                 ? {
@@ -577,11 +579,13 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       updateSession(id: string, patch: Partial<StudySession>) {
+        const normalizedDate = getDateOnlyValue(patch.date) || (patch.startedAt ? getDateOnlyValue(patch.startedAt) : "");
+        const normalizedPatch = normalizedDate ? { ...patch, date: normalizedDate } : patch;
         commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
             sessions: workspace.sessions.map((session) =>
-              session.id === id ? { ...session, ...patch } : session
+              session.id === id ? { ...session, ...normalizedPatch } : session
             )
           }))
         );

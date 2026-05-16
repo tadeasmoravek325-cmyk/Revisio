@@ -1,4 +1,5 @@
 import { AppData, Question, QuestionStatus, StudySession } from "@/types/study";
+import { createLocalDateTime, getDateOnlyValue, toDateInputValue } from "@/utils/date";
 
 const statusRank: Record<QuestionStatus, number> = {
   unknown: 0,
@@ -28,9 +29,11 @@ export function getLastSeen(data: AppData, questionId: string) {
     return undefined;
   }
 
-  return sessions
-    .map((session) => session.endedAt)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+  const latestSession = [...sessions].sort(
+    (a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()
+  )[0];
+
+  return getSessionDate(latestSession);
 }
 
 export function getDaysSinceLastSeen(data: AppData, questionId: string) {
@@ -39,7 +42,7 @@ export function getDaysSinceLastSeen(data: AppData, questionId: string) {
     return undefined;
   }
 
-  const diff = Date.now() - new Date(lastSeen).getTime();
+  const diff = Date.now() - createLocalDateTime(lastSeen).getTime();
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 }
 
@@ -77,7 +80,8 @@ export function getRecommendedQuestions(data: AppData, limit = 5) {
 }
 
 export function getSessionDate(session: StudySession) {
-  return session.startedAt.slice(0, 10);
+  // Regression check: selecting 2026-05-04 must render on 2026-05-04.
+  return getDateOnlyValue(session.date) || getDateOnlyValue(session.startedAt);
 }
 
 export function getTotalStudyMinutes(sessions: StudySession[]) {
@@ -89,10 +93,10 @@ export function getTotalTrackedStudyMinutes(data: AppData) {
 }
 
 export function getTodayStudyMinutes(sessions: StudySession[]) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toDateInputValue(new Date());
 
   return sessions
-    .filter((session) => session.startedAt.slice(0, 10) === today)
+    .filter((session) => getSessionDate(session) === today)
     .reduce((sum, session) => sum + session.durationMinutes, 0);
 }
 
@@ -104,10 +108,10 @@ export function getStudiedQuestionCount(data: AppData) {
 export function getAverageStudyMinutesPerDay(data: AppData) {
   const dates = [
     ...data.questions.map((question) => question.createdAt),
-    ...data.sessions.map((session) => session.startedAt)
+    ...data.sessions.map((session) => getSessionDate(session))
   ];
   const firstDate = dates
-    .map((date) => new Date(date).getTime())
+    .map((date) => createLocalDateTime(getDateOnlyValue(date)).getTime())
     .filter((time) => Number.isFinite(time))
     .sort((a, b) => a - b)[0];
 
@@ -120,11 +124,9 @@ export function getAverageStudyMinutesPerDay(data: AppData) {
 }
 
 export function getMinutesThisWeek(sessions: StudySession[]) {
-  const now = new Date();
-  const weekAgo = new Date(now);
-  weekAgo.setDate(now.getDate() - 6);
+  const weekAgo = toDateInputValue(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
 
   return sessions
-    .filter((session) => new Date(session.startedAt) >= weekAgo)
+    .filter((session) => getSessionDate(session) >= weekAgo)
     .reduce((sum, session) => sum + session.durationMinutes, 0);
 }

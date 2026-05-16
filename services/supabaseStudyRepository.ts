@@ -14,6 +14,7 @@ import {
   StudyWorkspace,
   Subject
 } from "@/types/study";
+import { getDateOnlyValue } from "@/utils/date";
 import { getSubjectAbbreviationFallback } from "@/utils/subjects";
 
 type WorkspaceRow = {
@@ -55,6 +56,7 @@ type StudySessionRow = {
   id: string;
   workspace_id: string;
   question_id: string | null;
+  session_date: string | null;
   started_at: string;
   ended_at: string;
   duration_minutes: number | null;
@@ -157,6 +159,7 @@ export function normalizeStateForCloud(state: AppState): AppState {
     const sessions = workspace.sessions.map((session) => ({
       ...session,
       id: ensureUuid(session.id, sessionIds),
+      date: getDateOnlyValue(session.date) || getDateOnlyValue(session.startedAt),
       questionId: session.questionId ? ensureUuid(session.questionId, questionIds) : undefined
     }));
 
@@ -350,7 +353,7 @@ export const supabaseStudyRepository = {
 
     const sessionRows = (await selectWithFallback<StudySessionRow[]>(
       (columns) => supabase.from("study_sessions").select(columns).in("workspace_id", workspaceIds),
-      "id,workspace_id,question_id,started_at,ended_at,duration_minutes,type,note,needs_review",
+      "id,workspace_id,question_id,session_date,started_at,ended_at,duration_minutes,type,note,needs_review",
       "id,workspace_id,question_id,started_at,ended_at,duration_minutes,type",
       { table: "study_sessions", userId, workspaceCount: workspaceIds.length }
     )) as StudySessionRow[];
@@ -395,6 +398,7 @@ export const supabaseStudyRepository = {
         .map<StudySession>((session) => ({
           id: session.id,
           questionId: session.question_id ?? undefined,
+          date: getDateOnlyValue(session.session_date ?? undefined) || getDateOnlyValue(session.started_at),
           startedAt: session.started_at,
           endedAt: session.ended_at,
           durationMinutes: session.duration_minutes ?? 0,
@@ -584,6 +588,7 @@ export const supabaseStudyRepository = {
             id: session.id,
             workspace_id: workspace.id,
             question_id: session.questionId ?? null,
+            session_date: getDateOnlyValue(session.date) || getDateOnlyValue(session.startedAt),
             started_at: session.startedAt,
             ended_at: session.endedAt,
             duration_minutes: session.durationMinutes,

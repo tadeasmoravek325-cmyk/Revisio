@@ -8,7 +8,9 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { Question, StudySession, StudySessionType } from "@/types/study";
+import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
+import { getSessionDate } from "@/utils/studyMetrics";
 
 type TimerPhase = "work" | "short_break" | "long_break";
 type TargetMode = "single" | "multiple" | "decide" | "later";
@@ -17,6 +19,7 @@ type ReviewSource = "completed" | "existing";
 
 type PendingInterval = {
   sessionId?: string;
+  date: string;
   startedAt: string;
   endedAt: string;
   durationMinutes: number;
@@ -128,6 +131,7 @@ export default function PomodoroPage() {
 
       setCompletedWorkCount(nextCompletedCount);
       setPendingInterval({
+        date: toDateInputValue(endedAt),
         startedAt: startedAt.toISOString(),
         endedAt: endedAt.toISOString(),
         durationMinutes: data.settings.pomodoroWorkMinutes,
@@ -341,6 +345,7 @@ export default function PomodoroPage() {
             onReview={(session) =>
               setPendingInterval({
                 sessionId: session.id,
+                date: getSessionDate(session),
                 startedAt: session.startedAt,
                 endedAt: session.endedAt,
                 durationMinutes: session.durationMinutes,
@@ -362,6 +367,7 @@ export default function PomodoroPage() {
             onEdit={(session) =>
               setPendingInterval({
                 sessionId: session.id,
+                date: getSessionDate(session),
                 startedAt: session.startedAt,
                 endedAt: session.endedAt,
                 durationMinutes: session.durationMinutes,
@@ -397,6 +403,7 @@ export default function PomodoroPage() {
                 ).toISOString();
                 if (pendingInterval.source === "existing" && pendingInterval.sessionId) {
                   updateSession(pendingInterval.sessionId, {
+                    date: pendingInterval.date,
                     endedAt,
                     durationMinutes,
                     type,
@@ -407,6 +414,7 @@ export default function PomodoroPage() {
                 } else {
                   logSession({
                     startedAt: pendingInterval.startedAt,
+                    date: pendingInterval.date,
                     endedAt,
                     durationMinutes,
                     type,
@@ -474,7 +482,7 @@ function NeedsReview({
               <div>
                 <p className="font-black text-slate-950 dark:text-slate-50">{session.durationMinutes} min</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {new Date(session.endedAt).toLocaleDateString()} · {sessionTypeLabels[session.type]}
+                  {getSessionDate(session)} · {sessionTypeLabels[session.type]}
                 </p>
                 {session.questionId ? (
                   <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -530,7 +538,7 @@ function RecentSessions({
                     {question ? getQuestionLabel(question) : "Deleted question"}
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {session.durationMinutes} min · {sessionTypeLabels[session.type]} · {new Date(session.endedAt).toLocaleDateString()}
+                    {session.durationMinutes} min · {sessionTypeLabels[session.type]} · {getSessionDate(session)}
                   </p>
                   {session.note ? (
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{session.note}</p>
@@ -611,6 +619,7 @@ function ReviewModal({
     onSave(
       selectedIds.map((questionId) => ({
         questionId,
+        date: interval.date,
         startedAt: interval.startedAt,
         endedAt,
         durationMinutes: resolvedAllocations[questionId],

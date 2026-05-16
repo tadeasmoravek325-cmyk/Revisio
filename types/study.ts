@@ -37,6 +37,7 @@ export type Question = {
 export type StudySession = {
   id: string;
   questionId?: string;
+  date?: string;
   startedAt: string;
   endedAt: string;
   durationMinutes: number;
