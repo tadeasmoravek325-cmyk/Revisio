@@ -14,6 +14,8 @@ type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   authError: string;
+  isLoggingOut: boolean;
+  lastAuthEvent: string;
   clearAuthState: () => void;
   signOut: () => Promise<void>;
 };
@@ -33,6 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [lastAuthEvent, setLastAuthEvent] = useState("initializing");
 
   useEffect(() => {
     let active = true;
@@ -52,12 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setUser(data.session?.user ?? null);
+        setLastAuthEvent(data.session ? "session_found" : "session_not_found");
         logAuth(data.session ? "auth session found" : "auth session not found", {
           userId: data.session?.user?.id
         });
         subscription = supabase.auth.onAuthStateChange((_event: string, session: any) => {
           setUser(session?.user ?? null);
           setLoading(false);
+          setLastAuthEvent(`${_event}:${session ? "session" : "no_session"}`);
           logAuth(session ? "auth state session found" : "auth state session not found", {
             event: _event,
             userId: session?.user?.id
@@ -66,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         if (active) {
           setAuthError(error instanceof Error ? error.message : "Authentication could not be initialized.");
+          setLastAuthEvent("session_error");
         }
       } finally {
         if (active) {
@@ -102,22 +109,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function clearAuthState() {
     setUser(null);
     setLoading(false);
+    setLastAuthEvent("auth_state_cleared");
+    logAuth("auth state cleared");
   }
 
   async function signOut() {
     logAuth("logout started", { userId: user?.id });
+    setIsLoggingOut(true);
     clearAuthState();
-    router.replace("/login");
 
     try {
       const supabase = await getSupabaseClient();
       await supabase.auth.signOut();
-      logAuth("logout completed", { userId: user?.id });
+      setLastAuthEvent("signout_completed");
+      logAuth("supabase signOut completed", { userId: user?.id });
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Logout could not be completed.");
+      setLastAuthEvent("signout_error");
       logAuth("logout failed", {
         error: error instanceof Error ? error.message : "Unknown error"
       });
+    } finally {
+      logAuth("hard redirect to /login", { reason: "logout" });
+      window.location.replace("/login");
     }
   }
 
@@ -126,10 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       authError,
+      isLoggingOut,
+      lastAuthEvent,
       clearAuthState,
       signOut
     }),
-    [authError, loading, user]
+    [authError, isLoggingOut, lastAuthEvent, loading, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
