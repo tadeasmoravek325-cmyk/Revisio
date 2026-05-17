@@ -20,6 +20,7 @@ import {
   Subject
 } from "@/types/study";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { createLocalDateTime, toDateInputValue } from "@/utils/date";
 import { SubjectPill } from "./SubjectPill";
@@ -95,14 +96,14 @@ export function QuestionCard({
   const [draft, setDraft] = useState({
     title: question.title,
     notes: question.notes ?? "",
-    number: question.number,
     tags: question.tags.join(", "),
     subjectId: question.subjectId,
     status: question.status,
     difficulty: question.difficulty,
     importance: question.importance
   });
-  const [manualMinutes, setManualMinutes] = useState(30);
+  const [draftNumberInput, setDraftNumberInput] = useState(String(question.number));
+  const [manualMinutesInput, setManualMinutesInput] = useState("30");
   const [manualType, setManualType] = useState<StudySessionType>("revision");
   const [manualNote, setManualNote] = useState("");
 
@@ -115,7 +116,7 @@ export function QuestionCard({
     onUpdate(question.id, {
       title: draft.title.trim(),
       notes: draft.notes.trim(),
-      number: draft.number,
+      number: parsePositiveIntegerDraft(draftNumberInput, question.number),
       tags: draft.tags
         .split(",")
         .map((tag) => tag.trim())
@@ -143,6 +144,8 @@ export function QuestionCard({
 
   function handleManualSubmit(event: FormEvent) {
     event.preventDefault();
+    const manualMinutes = parsePositiveIntegerDraft(manualMinutesInput, 30);
+    setManualMinutesInput(String(manualMinutes));
     if (manualMinutes < 1) {
       return;
     }
@@ -151,10 +154,6 @@ export function QuestionCard({
       createFinishedSession(question.id, manualMinutes, manualType, manualNote.trim())
     );
     showToast("Manual study time logged");
-    setManualMinutes(30);
-    setManualType("revision");
-    setManualNote("");
-    setShowManualLog(false);
   }
 
   return (
@@ -224,18 +223,14 @@ export function QuestionCard({
                 onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
               />
             </label>
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Number
-              <input
-                className="field mt-1"
-                min={1}
-                type="number"
-                value={draft.number}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, number: Number(event.target.value) }))
-                }
-              />
-            </label>
+            <SmoothNumberInput
+              label="Number"
+              value={draftNumberInput}
+              fallback={question.number}
+              inputClassName="field mt-1"
+              onValueChange={setDraftNumberInput}
+              onCommit={(value) => setDraftNumberInput(String(value))}
+            />
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200 sm:col-span-2">
               Notes
               <textarea
@@ -325,16 +320,14 @@ export function QuestionCard({
       {showManualLog ? (
         <form onSubmit={handleManualSubmit} className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
           <div className="grid gap-3 sm:grid-cols-[120px_180px_1fr]">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Minutes
-              <input
-                className="field mt-1"
-                min={1}
-                type="number"
-                value={manualMinutes}
-                onChange={(event) => setManualMinutes(Number(event.target.value))}
-              />
-            </label>
+            <SmoothNumberInput
+              label="Minutes"
+              value={manualMinutesInput}
+              fallback={30}
+              inputClassName="field mt-1"
+              onValueChange={setManualMinutesInput}
+              onCommit={(value) => setManualMinutesInput(String(value))}
+            />
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Type
               <select

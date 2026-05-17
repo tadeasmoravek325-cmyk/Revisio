@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -17,11 +17,9 @@ import {
 import { AppShell } from "@/components/layout/AppShell";
 import { ReportCard } from "@/components/reports/ReportCard";
 import { SubjectPill } from "@/components/study/SubjectPill";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useToast } from "@/components/ui/ToastProvider";
 import { difficultyLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { Question, StudySession, Subject } from "@/types/study";
@@ -29,7 +27,6 @@ import { addDays, createLocalDateTime, toDateInputValue } from "@/utils/date";
 import { compareQuestionsBySubjectAndNumber, parseQuestionNumber } from "@/utils/questionSorting";
 import { formatStudyTime } from "@/utils/timeFormat";
 import {
-  getAverageStudyMinutesPerDay,
   getDaysSinceLastSeen,
   getLastSeen,
   getReviewCount,
@@ -66,6 +63,29 @@ type QuestionChartItem = {
 
 type QuestionLimit = "8" | "15" | "all";
 type QuestionView = "chart" | "table";
+type ReportPeriod = "today" | "7" | "14" | "30" | "all";
+
+const reportPeriodStorageKey = "revisio-report-period";
+const reportPeriodOptions: Array<{ value: ReportPeriod; label: string; days?: number }> = [
+  { value: "today", label: "Today", days: 1 },
+  { value: "7", label: "Last 7 days", days: 7 },
+  { value: "14", label: "Last 14 days", days: 14 },
+  { value: "30", label: "Last 30 days", days: 30 },
+  { value: "all", label: "All time" }
+];
+
+function getInitialReportPeriod(): ReportPeriod {
+  if (typeof window === "undefined") {
+    return "14";
+  }
+
+  const saved = window.sessionStorage.getItem(reportPeriodStorageKey);
+  return reportPeriodOptions.some((option) => option.value === saved) ? (saved as ReportPeriod) : "14";
+}
+
+function getReportPeriodLabel(period: ReportPeriod) {
+  return reportPeriodOptions.find((option) => option.value === period)?.label ?? "Last 14 days";
+}
 
 function formatShortDate(dateValue: string) {
   return new Date(`${dateValue}T12:00:00`).toLocaleDateString("en-US", {
@@ -98,11 +118,49 @@ function formatLastReviewed(value?: string, daysSinceLastSeen?: number) {
   });
 }
 
-function getStudyTimeByDay(sessions: StudySession[]) {
-  const today = new Date();
+function getReportPeriodStart(period: ReportPeriod) {
+  const option = reportPeriodOptions.find((item) => item.value === period);
+  if (!option?.days) {
+    return undefined;
+  }
 
-  return Array.from({ length: 14 }, (_, index) => {
-    const date = toDateInputValue(addDays(today, index - 13));
+  return toDateInputValue(addDays(new Date(), 1 - option.days));
+}
+
+function getFilteredSessionsByPeriod(sessions: StudySession[], period: ReportPeriod) {
+  const start = getReportPeriodStart(period);
+  if (!start) {
+    return sessions;
+  }
+
+  return sessions.filter((session) => getSessionDate(session) >= start);
+}
+
+function getReportPeriodDayCount(sessions: StudySession[], period: ReportPeriod) {
+  const option = reportPeriodOptions.find((item) => item.value === period);
+  if (option?.days) {
+    return option.days;
+  }
+
+  const firstSessionDate = sessions
+    .map((session) => getSessionDate(session))
+    .filter(Boolean)
+    .sort()[0];
+
+  if (!firstSessionDate) {
+    return 1;
+  }
+
+  const firstDate = createLocalDateTime(firstSessionDate).getTime();
+  return Math.max(1, Math.ceil((Date.now() - firstDate) / (1000 * 60 * 60 * 24)));
+}
+
+function getStudyTimeByDay(sessions: StudySession[], period: ReportPeriod) {
+  const today = new Date();
+  const dayCount = getReportPeriodDayCount(sessions, period);
+
+  return Array.from({ length: dayCount }, (_, index) => {
+    const date = toDateInputValue(addDays(today, index - dayCount + 1));
     const minutes = sessions
       .filter((session) => getSessionDate(session) === date)
       .reduce((sum, session) => sum + session.durationMinutes, 0);
@@ -227,22 +285,28 @@ function QuestionStudyTooltip({
 }
 
 export default function ReportsPage() {
-  const { data, getDaysSinceLastSeen: daysSinceLastSeen, hydrated, resetDemoData } = useStudyStore();
-  const { showToast } = useToast();
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const { data, hydrated } = useStudyStore();
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(getInitialReportPeriod);
   const [questionLimit, setQuestionLimit] = useState<QuestionLimit>("8");
   const [questionView, setQuestionView] = useState<QuestionView>("chart");
-  const totalMinutes = getTotalStudyMinutes(data.sessions);
-  const averageDailyMinutes = getAverageStudyMinutesPerDay(data);
+  const periodLabel = getReportPeriodLabel(reportPeriod);
+  const filteredSessions = getFilteredSessionsByPeriod(data.sessions, reportPeriod);
+  const filteredData = { ...data, sessions: filteredSessions };
+  const totalMinutes = getTotalStudyMinutes(filteredSessions);
+  const averageDailyMinutes = Math.round(totalMinutes / getReportPeriodDayCount(data.sessions, reportPeriod));
   const streaks = getStudyStreaks(data.sessions);
 
-  const dailyData = getStudyTimeByDay(data.sessions);
+  useEffect(() => {
+    window.sessionStorage.setItem(reportPeriodStorageKey, reportPeriod);
+  }, [reportPeriod]);
+
+  const dailyData = getStudyTimeByDay(filteredSessions, reportPeriod);
   const questionOrder = compareQuestionsBySubjectAndNumber(data.subjects);
   const subjectData = data.subjects.map((subject) => {
     const questionIds = data.questions
       .filter((question) => question.subjectId === subject.id)
       .map((question) => question.id);
-    const minutes = data.sessions
+    const minutes = filteredSessions
       .filter((session) => !session.needsReview && session.questionId && questionIds.includes(session.questionId))
       .reduce((sum, session) => sum + session.durationMinutes, 0);
 
@@ -267,10 +331,10 @@ export default function ReportsPage() {
         question,
         subject: subject?.name ?? "No subject",
         subjectAbbreviation,
-        minutes: getTotalTimeForQuestion(data, question.id),
-        reviewCount: getReviewCount(data, question.id),
-        lastSeen: getLastSeen(data, question.id),
-        daysSinceLastSeen: getDaysSinceLastSeen(data, question.id)
+        minutes: getTotalTimeForQuestion(filteredData, question.id),
+        reviewCount: getReviewCount(filteredData, question.id),
+        lastSeen: getLastSeen(filteredData, question.id),
+        daysSinceLastSeen: getDaysSinceLastSeen(filteredData, question.id)
       };
     })
     .sort((a, b) => b.minutes - a.minutes || questionOrder(a.question, b.question));
@@ -281,14 +345,16 @@ export default function ReportsPage() {
       : allQuestionData.slice(0, Number(questionLimit));
   const questionChartWidth = Math.max(520, questionData.length * 72);
 
-  const neglectedQuestions = getNeglectedQuestions(data.questions, data.subjects, daysSinceLastSeen);
+  const neglectedQuestions = getNeglectedQuestions(data.questions, data.subjects, (questionId) =>
+    getDaysSinceLastSeen(filteredData, questionId)
+  );
   const hardestQuestions = [...data.questions]
     .sort((a, b) => {
       const difficultyRank = { hard: 3, medium: 2, easy: 1 };
       return (
         difficultyRank[b.difficulty] - difficultyRank[a.difficulty] ||
-        getReviewCount(data, a.id) - getReviewCount(data, b.id) ||
-        getTotalTimeForQuestion(data, a.id) - getTotalTimeForQuestion(data, b.id) ||
+        getReviewCount(filteredData, a.id) - getReviewCount(filteredData, b.id) ||
+        getTotalTimeForQuestion(filteredData, a.id) - getTotalTimeForQuestion(filteredData, b.id) ||
         questionOrder(a, b)
       );
     })
@@ -301,20 +367,34 @@ export default function ReportsPage() {
       ) : (
         <>
       <PageHeader title="Reports" eyebrow="Progress readout">
-        <button className="btn-secondary" onClick={() => setShowResetConfirm(true)}>
-          Reset demo data
-        </button>
+        <label className="relative inline-flex items-center">
+          <span className="sr-only">Report period</span>
+          <select
+            className="btn-secondary cursor-pointer appearance-none pr-9"
+            value={reportPeriod}
+            onChange={(event) => setReportPeriod(event.target.value as ReportPeriod)}
+          >
+            {reportPeriodOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-3 text-xs font-black text-slate-500 dark:text-slate-300">
+            ▼
+          </span>
+        </label>
       </PageHeader>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Total study" value={formatStudyTime(totalMinutes)} detail={`${data.sessions.length} sessions logged`} />
-        <MetricCard label="Daily average" value={formatStudyTime(averageDailyMinutes)} detail="Across your preparation history" />
+        <MetricCard label="Total study" value={formatStudyTime(totalMinutes)} detail={`${filteredSessions.length} sessions logged`} />
+        <MetricCard label="Daily average" value={formatStudyTime(averageDailyMinutes)} detail={periodLabel} />
         <MetricCard label="Current streak" value={`${streaks.current} days`} detail={`Longest streak: ${streaks.longest} days`} />
-        <MetricCard label="Studied questions" value={`${getStudiedQuestionCount(data)}/${data.questions.length}`} detail="Questions with at least one review" />
+        <MetricCard label="Studied questions" value={`${getStudiedQuestionCount(filteredData)}/${data.questions.length}`} detail={`With reviews in ${periodLabel.toLowerCase()}`} />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <ReportCard title="Study time by day" detail="Last 14 days" className="min-h-[340px]">
+        <ReportCard title="Study time by day" detail={periodLabel} className="min-h-[340px]">
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={dailyData} margin={{ left: -18, right: 8, top: 8, bottom: 0 }}>
@@ -502,7 +582,7 @@ export default function ReportsPage() {
                     <span className="badge bg-amber-100 text-amber-800">
                       {daysSinceLastSeen === undefined ? "Never studied" : `${daysSinceLastSeen} days since review`}
                     </span>
-                    <span className="badge bg-slate-100 text-slate-700">{getReviewCount(data, question.id)} reviews</span>
+                    <span className="badge bg-slate-100 text-slate-700">{getReviewCount(filteredData, question.id)} reviews</span>
                   </div>
                 </article>
               );
@@ -514,7 +594,7 @@ export default function ReportsPage() {
           <div className="space-y-3">
             {hardestQuestions.map((question) => {
               const subject = data.subjects.find((item) => item.id === question.subjectId);
-              const lastSeen = getDaysSinceLastSeen(data, question.id);
+              const lastSeen = getDaysSinceLastSeen(filteredData, question.id);
               return (
                 <article key={question.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
                   <div className="flex flex-wrap items-center gap-2">
@@ -527,12 +607,12 @@ export default function ReportsPage() {
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
                       <p className="font-black text-slate-950 dark:text-slate-50">
-                        {formatStudyTime(getTotalTimeForQuestion(data, question.id))}
+                        {formatStudyTime(getTotalTimeForQuestion(filteredData, question.id))}
                       </p>
                       <p className="font-semibold text-slate-500 dark:text-slate-400">studied</p>
                     </div>
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
-                      <p className="font-black text-slate-950 dark:text-slate-50">{getReviewCount(data, question.id)}</p>
+                      <p className="font-black text-slate-950 dark:text-slate-50">{getReviewCount(filteredData, question.id)}</p>
                       <p className="font-semibold text-slate-500 dark:text-slate-400">reviews</p>
                     </div>
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
@@ -546,19 +626,6 @@ export default function ReportsPage() {
           </div>
         </ReportCard>
       </div>
-      <ConfirmDialog
-        open={showResetConfirm}
-        title="Reset demo data?"
-        message="This will replace your current local study data with the sample dataset."
-        confirmLabel="Reset"
-        destructive
-        onCancel={() => setShowResetConfirm(false)}
-        onConfirm={() => {
-          resetDemoData();
-          setShowResetConfirm(false);
-          showToast("Demo data reset", "warning");
-        }}
-      />
       </>
       )}
     </AppShell>

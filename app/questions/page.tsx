@@ -7,6 +7,7 @@ import { QuestionCard } from "@/components/study/QuestionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { difficultyLabels, importanceLabels, statusLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
@@ -81,6 +82,8 @@ export default function QuestionsPage() {
   const [subjectId, setSubjectId] = useState("all");
   const [status, setStatus] = useState<QuestionStatus | "all">("all");
   const [sortBy, setSortBy] = useState<SortKey>("subjectNumber");
+  const [showAddSubject, setShowAddSubject] = useState(false);
+  const [showAddQuestion, setShowAddQuestion] = useState(false);
 
   const [subjectName, setSubjectName] = useState("");
   const [subjectAbbreviation, setSubjectAbbreviation] = useState("");
@@ -96,7 +99,7 @@ export default function QuestionsPage() {
 
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [questionNumber, setQuestionNumber] = useState(1);
+  const [questionNumberInput, setQuestionNumberInput] = useState("1");
   const [tags, setTags] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [importance, setImportance] = useState<Importance>("medium");
@@ -113,7 +116,7 @@ export default function QuestionsPage() {
   }, [data.questions, selectedSubjectId]);
 
   useEffect(() => {
-    setQuestionNumber(nextQuestionNumber);
+    setQuestionNumberInput(String(nextQuestionNumber));
   }, [nextQuestionNumber]);
 
   useEffect(() => {
@@ -225,6 +228,9 @@ export default function QuestionsPage() {
       return;
     }
 
+    const questionNumber = parsePositiveIntegerDraft(questionNumberInput, nextQuestionNumber);
+    setQuestionNumberInput(String(questionNumber));
+
     addQuestion({
       subjectId: selectedSubjectId,
       number: questionNumber,
@@ -244,7 +250,7 @@ export default function QuestionsPage() {
     setTags("");
     setDifficulty("medium");
     setImportance("medium");
-    setQuestionNumber(nextQuestionNumber + 1);
+    setQuestionNumberInput(String(nextQuestionNumber + 1));
   }
 
   return (
@@ -253,16 +259,50 @@ export default function QuestionsPage() {
         <LoadingState />
       ) : (
         <>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader title="Questions" eyebrow="Study bank" />
-        <ExamTopicsImportDialog className="btn-primary sm:mt-1" />
-      </div>
+      <PageHeader title="Questions" eyebrow="Study bank" />
 
-      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-        <aside className="space-y-5">
-          <section className="panel p-4 sm:p-5">
-            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Add subject</h2>
-            <form onSubmit={handleAddSubject} className="mt-4 space-y-3">
+      <div className="space-y-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              className="btn-secondary inline-flex items-center justify-center"
+              type="button"
+              onClick={() => {
+                setShowAddSubject((value) => !value);
+                setShowAddQuestion(false);
+              }}
+              aria-expanded={showAddSubject}
+            >
+              + Add subject
+            </button>
+            <button
+              className="btn-secondary inline-flex items-center justify-center"
+              type="button"
+              onClick={() => {
+                setShowAddQuestion((value) => !value);
+                setShowAddSubject(false);
+              }}
+              aria-expanded={showAddQuestion}
+            >
+              + Add question
+            </button>
+          </div>
+          <ExamTopicsImportDialog
+            triggerLabel="Import topics"
+            triggerIcon={
+              <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M12 16V4" />
+                <path d="m7 9 5-5 5 5" />
+                <path d="M20 16.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.5" />
+              </svg>
+            }
+            className="btn-primary inline-flex items-center justify-center gap-2 sm:ml-auto"
+          />
+        </div>
+
+        {showAddSubject ? (
+          <section className="animate-enter rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm transition-all duration-200 dark:border-slate-700 dark:bg-slate-900/70 sm:p-5">
+            <form onSubmit={handleAddSubject} className="space-y-3">
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Subject name
                 <input
@@ -408,10 +448,11 @@ export default function QuestionsPage() {
               </div>
             </div>
           </section>
+        ) : null}
 
-          <section className="panel p-4 sm:p-5">
-            <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Add question</h2>
-            <form onSubmit={handleAddQuestion} className="mt-4 space-y-3">
+        {showAddQuestion ? (
+          <section className="animate-enter rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm transition-all duration-200 dark:border-slate-700 dark:bg-slate-900/70 sm:p-5">
+            <form onSubmit={handleAddQuestion} className="space-y-3">
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Subject
                 <select
@@ -436,16 +477,14 @@ export default function QuestionsPage() {
                 />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  Number
-                  <input
-                    className="field mt-1"
-                    min={1}
-                    type="number"
-                    value={questionNumber}
-                    onChange={(event) => setQuestionNumber(Number(event.target.value))}
-                  />
-                </label>
+                <SmoothNumberInput
+                  label="Number"
+                  value={questionNumberInput}
+                  fallback={nextQuestionNumber}
+                  inputClassName="field mt-1"
+                  onValueChange={setQuestionNumberInput}
+                  onCommit={(value) => setQuestionNumberInput(String(value))}
+                />
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                   Importance
                   <select
@@ -498,10 +537,12 @@ export default function QuestionsPage() {
               </button>
             </form>
           </section>
+        ) : null}
 
+        <section className="space-y-3">
           <section className="panel p-4 sm:p-5">
             <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Filters</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Subject
                 <select
@@ -548,9 +589,7 @@ export default function QuestionsPage() {
               </label>
             </div>
           </section>
-        </aside>
 
-        <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
               {filteredQuestions.length} of {data.questions.length} questions

@@ -7,6 +7,7 @@ import { SubjectPill } from "@/components/study/SubjectPill";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
@@ -76,7 +77,7 @@ export default function CalendarPage() {
   const [editSubjectId, setEditSubjectId] = useState("");
   const [editQuestionId, setEditQuestionId] = useState("");
   const [editDate, setEditDate] = useState(today);
-  const [editDuration, setEditDuration] = useState(25);
+  const [editDurationInput, setEditDurationInput] = useState("25");
   const [editType, setEditType] = useState<StudySessionType>("active_recall");
   const [editNote, setEditNote] = useState("");
   const calendarRef = useRef<HTMLElement | null>(null);
@@ -143,7 +144,7 @@ export default function CalendarPage() {
     setEditSubjectId(question?.subjectId ?? data.subjects[0]?.id ?? "");
     setEditQuestionId(question?.id ?? "");
     setEditDate(getSessionDate(session));
-    setEditDuration(session.durationMinutes);
+    setEditDurationInput(String(session.durationMinutes));
     setEditType(session.type);
     setEditNote(session.note ?? "");
   }
@@ -156,6 +157,8 @@ export default function CalendarPage() {
 
   function handleEditSubmit(event: FormEvent) {
     event.preventDefault();
+    const editDuration = parsePositiveIntegerDraft(editDurationInput, editingSession?.durationMinutes ?? 25);
+    setEditDurationInput(String(editDuration));
     if (!editingSession || editDuration < 1 || !editDate) {
       return;
     }
@@ -406,16 +409,14 @@ export default function CalendarPage() {
                 Date
                 <input className="field mt-1" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
               </label>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Duration
-                <input
-                  className="field mt-1"
-                  min={1}
-                  type="number"
-                  value={editDuration}
-                  onChange={(event) => setEditDuration(Math.max(1, Number(event.target.value)))}
-                />
-              </label>
+              <SmoothNumberInput
+                label="Duration"
+                value={editDurationInput}
+                fallback={editingSession?.durationMinutes ?? 25}
+                inputClassName="field mt-1"
+                onValueChange={setEditDurationInput}
+                onCommit={(value) => setEditDurationInput(String(value))}
+              />
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 sm:col-span-2">
                 Study type
                 <select className="field mt-1" value={editType} onChange={(event) => setEditType(event.target.value as StudySessionType)}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, ReactNode, useMemo, useRef, useState } from "react";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { useToast } from "@/components/ui/ToastProvider";
 import {
@@ -12,6 +12,7 @@ import { extractExamTopicText, isSupportedExamTopicFileName } from "@/utils/exam
 
 type ExamTopicsImportDialogProps = {
   triggerLabel?: string;
+  triggerIcon?: ReactNode;
   className?: string;
   disabled?: boolean;
 };
@@ -36,6 +37,7 @@ function getConfidenceClass(confidence: ParsedExamTopic["confidence"]) {
 
 export function ExamTopicsImportDialog({
   triggerLabel = "Import exam topics",
+  triggerIcon,
   className = "btn-secondary",
   disabled = false
 }: ExamTopicsImportDialogProps) {
@@ -240,11 +242,13 @@ export function ExamTopicsImportDialog({
       <button
         className={className}
         disabled={disabled || !hasWorkspaces}
+        type="button"
         onClick={() => {
           setOpen(true);
           resetFlow();
         }}
       >
+        {triggerIcon}
         {triggerLabel}
       </button>
 

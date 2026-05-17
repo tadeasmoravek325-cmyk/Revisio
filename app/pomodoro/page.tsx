@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SmoothNumberInput } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
@@ -488,6 +489,7 @@ export default function PomodoroPage() {
                     label="Duration"
                     value={normalDurationInput}
                     suffix="min"
+                    fallback={Math.max(1, Math.round(timer.durationSeconds / 60))}
                     onValueChange={setNormalDurationInput}
                     onCommit={commitNormalDuration}
                   />
@@ -636,54 +638,6 @@ export default function PomodoroPage() {
   );
 }
 
-function SmoothNumberInput({
-  label,
-  value,
-  suffix,
-  disabled = false,
-  min = 1,
-  onValueChange,
-  onCommit
-}: {
-  label: string;
-  value: string;
-  suffix?: string;
-  disabled?: boolean;
-  min?: number;
-  onValueChange: (value: string) => void;
-  onCommit: (value: number) => void;
-}) {
-  function commit() {
-    const parsed = Number(value);
-    const next = Number.isFinite(parsed) && parsed >= min ? parsed : min;
-    onCommit(Math.round(next));
-  }
-
-  return (
-    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-      {label}
-      <div className="mt-1 flex items-center gap-2">
-        <input
-          className="field"
-          disabled={disabled}
-          min={min}
-          step={1}
-          type="number"
-          value={value}
-          onBlur={commit}
-          onChange={(event) => onValueChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.currentTarget.blur();
-            }
-          }}
-        />
-        {suffix ? <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{suffix}</span> : null}
-      </div>
-    </label>
-  );
-}
-
 function NumberSetting({ label, value, onCommit }: { label: string; value: number; onCommit: (value: number) => void }) {
   const [draft, setDraft] = useState(String(value));
 
@@ -695,6 +649,7 @@ function NumberSetting({ label, value, onCommit }: { label: string; value: numbe
     <SmoothNumberInput
       label={label}
       value={draft}
+      fallback={value}
       onValueChange={setDraft}
       onCommit={(nextValue) => {
         setDraft(String(nextValue));
@@ -1106,6 +1061,7 @@ function ReviewModal({
             label="Duration"
             value={durationDraft}
             suffix="min"
+            fallback={durationMinutes}
             onValueChange={setDurationDraft}
             onCommit={(value) => {
               const next = clampPositiveInteger(value, interval.durationMinutes);

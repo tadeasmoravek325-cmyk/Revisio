@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { sessionTypeLabels } from "@/data/studyData";
+import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Question, StudySession, Subject } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
@@ -16,7 +17,7 @@ type SessionFormProps = {
 export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps) {
   const { showToast } = useToast();
   const [subjectId, setSubjectId] = useState(subjects[0]?.id ?? "");
-  const [minutes, setMinutes] = useState(45);
+  const [minutesInput, setMinutesInput] = useState("45");
   const [type, setType] = useState<StudySession["type"]>("active_recall");
   const [questionId, setQuestionId] = useState("");
   const [studyDate, setStudyDate] = useState(toDateInputValue(new Date()));
@@ -33,6 +34,8 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const resolvedQuestionId = questionId || subjectQuestions[0]?.id;
+    const minutes = parsePositiveIntegerDraft(minutesInput, 45);
+    setMinutesInput(String(minutes));
     if (!resolvedQuestionId || minutes < 1) {
       return;
     }
@@ -56,56 +59,23 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
       note: note.trim()
     });
     showToast("Study session logged");
-    setMinutes(45);
-    setQuestionId("");
-    setStudyDate(toDateInputValue(new Date()));
-    setNote("");
   }
 
   return (
-    <form onSubmit={handleSubmit} className="panel p-4">
+    <form onSubmit={handleSubmit} className="panel p-4 sm:p-5">
       <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Log study time</h2>
       {!questions.length ? (
         <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
           Create a question first, then study sessions can be logged against it.
         </div>
       ) : null}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 space-y-3">
         <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
           Subject
           <select className="field mt-1" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
             {subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
                 {subject.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Minutes
-          <input
-            className="field mt-1"
-            min={1}
-            type="number"
-            value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Date
-          <input
-            className="field mt-1"
-            type="date"
-            value={studyDate}
-            onChange={(e) => setStudyDate(e.target.value)}
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Mode
-          <select className="field mt-1" value={type} onChange={(e) => setType(e.target.value as StudySession["type"])}>
-            {Object.entries(sessionTypeLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
               </option>
             ))}
           </select>
@@ -121,6 +91,35 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
             ))}
           </select>
         </label>
+        <div className="grid items-start gap-3 sm:grid-cols-3">
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Date
+            <input
+              className="field mt-1 block h-10"
+              type="date"
+              value={studyDate}
+              onChange={(e) => setStudyDate(e.target.value)}
+            />
+          </label>
+          <SmoothNumberInput
+            label="Minutes"
+            value={minutesInput}
+            fallback={45}
+            inputClassName="field block h-10"
+            onValueChange={setMinutesInput}
+            onCommit={(value) => setMinutesInput(String(value))}
+          />
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Mode
+            <select className="field mt-1 block h-10" value={type} onChange={(e) => setType(e.target.value as StudySession["type"])}>
+              {Object.entries(sessionTypeLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
       <label className="mt-3 block text-sm font-semibold text-slate-700 dark:text-slate-200">
         Note

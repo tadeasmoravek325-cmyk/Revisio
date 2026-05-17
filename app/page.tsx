@@ -166,7 +166,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-        <SubjectProgressWidget subjects={data.subjects} questions={data.questions} />
+        <SubjectProgressWidget subjects={data.subjects} questions={data.questions} sessions={data.sessions} />
         <RecommendedQuestionsWidget subjects={data.subjects} items={recommendedQuestions} />
       </div>
 

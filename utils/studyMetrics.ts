@@ -1,4 +1,4 @@
-import { AppData, Question, QuestionStatus, StudySession } from "@/types/study";
+import { AppData, Question, QuestionStatus, StudySession, Subject } from "@/types/study";
 import { createLocalDateTime, getDateOnlyValue, toDateInputValue } from "@/utils/date";
 
 const statusRank: Record<QuestionStatus, number> = {
@@ -103,6 +103,79 @@ export function getTodayStudyMinutes(sessions: StudySession[]) {
 export function getStudiedQuestionCount(data: AppData) {
   return data.questions.filter((question) => getSessionsForQuestion(data, question.id).length > 0)
     .length;
+}
+
+type StudySessionWithQuestionIds = StudySession & {
+  questionIds?: unknown;
+};
+
+function getSessionQuestionIds(session: StudySession) {
+  const sessionWithQuestionIds = session as StudySessionWithQuestionIds;
+  const ids = new Set<string>();
+
+  if (session.questionId) {
+    ids.add(session.questionId);
+  }
+
+  if (Array.isArray(sessionWithQuestionIds.questionIds)) {
+    sessionWithQuestionIds.questionIds.forEach((questionId) => {
+      if (typeof questionId === "string" && questionId.trim()) {
+        ids.add(questionId);
+      }
+    });
+  }
+
+  return [...ids];
+}
+
+export function getSubjectProgressDetails({
+  questions,
+  sessions,
+  subject
+}: {
+  questions: Question[];
+  sessions: StudySession[];
+  subject: Subject;
+}) {
+  const questionsById = new Map(questions.map((question) => [question.id, question]));
+  const subjectQuestionIds = new Set(
+    questions.filter((question) => question.subjectId === subject.id).map((question) => question.id)
+  );
+  const studiedQuestionIds = new Set<string>();
+  const sessionsUsed = new Set<string>();
+  const ignoredInvalidQuestionIds = new Set<string>();
+
+  sessions.forEach((session) => {
+    if (session.needsReview) {
+      return;
+    }
+
+    let sessionUsed = false;
+    getSessionQuestionIds(session).forEach((questionId) => {
+      const question = questionsById.get(questionId);
+
+      if (!question || question.subjectId !== subject.id) {
+        ignoredInvalidQuestionIds.add(questionId);
+        return;
+      }
+
+      if (subjectQuestionIds.has(questionId)) {
+        studiedQuestionIds.add(questionId);
+        sessionUsed = true;
+      }
+    });
+
+    if (sessionUsed) {
+      sessionsUsed.add(session.id);
+    }
+  });
+
+  return {
+    totalQuestions: subjectQuestionIds.size,
+    studiedQuestionIds: [...studiedQuestionIds],
+    sessionsUsed: [...sessionsUsed],
+    ignoredInvalidQuestionIds: [...ignoredInvalidQuestionIds]
+  };
 }
 
 export function getAverageStudyMinutesPerDay(data: AppData) {
