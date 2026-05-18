@@ -3,6 +3,13 @@ const latinDecoder = new TextDecoder("latin1");
 const PDFJS_VERSION = "4.10.38";
 const PDFJS_MODULE_URL = `https://esm.sh/pdfjs-dist@${PDFJS_VERSION}/build/pdf.mjs`;
 const PDFJS_WORKER_URL = `https://esm.sh/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.mjs`;
+const TESSERACT_VERSION = "5.1.1";
+const TESSERACT_MODULE_URL = `https://esm.sh/tesseract.js@${TESSERACT_VERSION}`;
+const HEIC2ANY_VERSION = "0.0.4";
+const HEIC2ANY_MODULE_URL = `https://esm.sh/heic2any@${HEIC2ANY_VERSION}`;
+const maxImageBytes = 18 * 1024 * 1024;
+const supportedExtensions = [".txt", ".csv", ".docx", ".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
+const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 
 function getExtension(fileName: string) {
   const match = fileName.toLocaleLowerCase().match(/\.[^.]+$/);
@@ -338,11 +345,93 @@ async function extractPdfText(data: ArrayBuffer) {
   return text;
 }
 
+function isHeicImage(extension: string) {
+  return extension === ".heic" || extension === ".heif";
+}
+
+function isImageFileExtension(extension: string) {
+  return supportedImageExtensions.includes(extension);
+}
+
+async function convertHeicToReadableImage(file: File) {
+  try {
+    const module = await import(/* webpackIgnore: true */ HEIC2ANY_MODULE_URL);
+    const heic2any = module.default ?? module;
+    const converted = await heic2any({
+      blob: file,
+      toType: "image/jpeg",
+      quality: 0.92
+    });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+
+    if (!(blob instanceof Blob)) {
+      throw new Error("HEIC conversion returned no readable image.");
+    }
+
+    return blob;
+  } catch {
+    throw new Error("HEIC conversion failed. Please try exporting the photo as JPG/PNG or upload a clearer screenshot.");
+  }
+}
+
+async function extractImageText(file: File) {
+  const extension = getExtension(file.name);
+  if (file.size > maxImageBytes) {
+    throw new Error("This image is too large for browser OCR. Please upload a smaller screenshot or compressed photo.");
+  }
+
+  const imageBlob = isHeicImage(extension) ? await convertHeicToReadableImage(file) : file;
+  const imageUrl = URL.createObjectURL(imageBlob);
+
+  try {
+    const tesseract = await import(/* webpackIgnore: true */ TESSERACT_MODULE_URL);
+    const recognize = tesseract.recognize ?? tesseract.default?.recognize;
+
+    if (typeof recognize !== "function") {
+      throw new Error("OCR engine could not be loaded.");
+    }
+
+    const result = await recognize(imageUrl, "eng+ces");
+    const text = String(result?.data?.text ?? "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[Revisio OCR extraction debug]", {
+        fileName: file.name,
+        originalType: file.type,
+        originalSize: file.size,
+        extractedTextLength: text.length,
+        first1000Characters: text.slice(0, 1000)
+      });
+    }
+
+    if (text.length < 20) {
+      throw new Error("OCR found no readable text. The image may be blurry, low contrast, cropped, or too small.");
+    }
+
+    return text;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("OCR found no readable text")) {
+      throw error;
+    }
+
+    throw new Error("OCR failed for this image. Try a sharper screenshot/photo with good lighting and readable text.");
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
 export async function extractExamTopicText(file: File) {
   const extension = getExtension(file.name);
 
   if (extension === ".txt" || extension === ".csv") {
     return file.text();
+  }
+
+  if (isImageFileExtension(extension)) {
+    return extractImageText(file);
   }
 
   const data = await file.arrayBuffer();
@@ -355,9 +444,9 @@ export async function extractExamTopicText(file: File) {
     return extractPdfText(data);
   }
 
-  throw new Error("Unsupported file type. Please upload TXT, CSV, DOCX, or a text-based PDF.");
+  throw new Error("Unsupported file type. Please upload PDF, DOCX, TXT, CSV, JPG, PNG, WEBP, or HEIC.");
 }
 
 export function isSupportedExamTopicFileName(fileName: string) {
-  return [".txt", ".csv", ".docx", ".pdf"].includes(getExtension(fileName));
+  return supportedExtensions.includes(getExtension(fileName));
 }

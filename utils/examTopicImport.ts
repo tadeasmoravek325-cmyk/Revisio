@@ -58,7 +58,7 @@ function createImportId(index: number) {
 }
 
 export function getExamTopicFileSupportMessage() {
-  return "TXT, CSV, DOCX, and text-based PDF are supported. Scanned PDFs need OCR and may not extract text.";
+  return "PDF, DOCX, TXT, CSV, JPG, PNG, WEBP, and HEIC are supported. Image imports use browser OCR before preview.";
 }
 
 export function isSupportedExamTopicFile(file: File) {

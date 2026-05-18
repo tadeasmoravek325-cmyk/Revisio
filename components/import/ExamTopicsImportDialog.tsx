@@ -163,43 +163,55 @@ export function ExamTopicsImportDialog({
     setStep("review");
   }
 
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  async function processFiles(files: File[]) {
     setError("");
 
-    if (!file) {
+    if (!files.length) {
       return;
     }
 
-    if (!isSupportedExamTopicFileName(file.name)) {
-      setError("Unsupported file type. Please upload TXT, CSV, DOCX, or a text-based PDF.");
-      event.target.value = "";
+    const unsupportedFile = files.find((file) => !isSupportedExamTopicFileName(file.name));
+    if (unsupportedFile) {
+      setError(`Unsupported file type: ${unsupportedFile.name}. Please upload PDF, DOCX, TXT, CSV, JPG, PNG, WEBP, or HEIC.`);
       return;
     }
 
-    setFileName(file.name);
+    const selectedFileName = files.length === 1 ? files[0].name : `${files.length} files`;
+    setFileName(selectedFileName);
     setStep("extract");
-    setExtractStatus("Extracting text from the file...");
+    setExtractStatus(files.length > 1 ? `Extracting text from ${files.length} files...` : "Extracting text from the file...");
 
     try {
-      const text = await extractExamTopicText(file);
+      const extractedTexts: string[] = [];
+
+      for (const [index, file] of files.entries()) {
+        setExtractStatus(`Extracting text from ${file.name} (${index + 1}/${files.length})...`);
+        const text = await extractExamTopicText(file);
+        extractedTexts.push(`--- File: ${file.name} ---\n${text}`);
+      }
+
+      const text = extractedTexts.join("\n\n").trim();
       setExtractStatus("Analyzing subjects, sections, and numbered questions...");
 
-      if (file.name.toLocaleLowerCase().endsWith(".pdf")) {
+      if (files.length === 1 && files[0].name.toLocaleLowerCase().endsWith(".pdf")) {
         setPendingPdfText(text);
         setExtractedPdfPreview(text.slice(0, 2000));
         setStep("pdfPreview");
         return;
       }
 
-      analyzeExtractedText(text, file.name);
+      analyzeExtractedText(text, selectedFileName);
     } catch (parseError) {
       setError(parseError instanceof Error ? parseError.message : "Failed to parse this file.");
       setStep("upload");
     } finally {
       setExtractStatus("");
-      event.target.value = "";
     }
+  }
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    await processFiles(Array.from(event.target.files ?? []));
+    event.target.value = "";
   }
 
   function updateTopic(id: string, patch: Partial<ParsedExamTopic>) {
@@ -272,24 +284,34 @@ export function ExamTopicsImportDialog({
 
             <div className="max-h-[calc(90vh-96px)] overflow-y-auto p-4 sm:p-5">
               {step === "upload" ? (
-                <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-5 text-center dark:border-blue-500/30 dark:bg-blue-500/10">
+                <div
+                  className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-5 text-center dark:border-blue-500/30 dark:bg-blue-500/10"
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    processFiles(Array.from(event.dataTransfer.files));
+                  }}
+                >
                   <h3 className="text-lg font-black text-slate-950 dark:text-slate-50">Upload exam topics</h3>
                   <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    TXT, CSV, DOCX, and text-based PDF files are supported. Files work best with subject headings and
-                    numbered questions. Nothing is created until you approve the preview.
+                    Drop PDFs, DOCX files, screenshots, or iPhone/iPad photos here. Files work best with subject
+                    headings and numbered questions. Nothing is created until you approve the preview.
                   </p>
                   <button className="btn-primary mt-5" onClick={() => fileInputRef.current?.click()}>
-                    Choose file
+                    Choose files
                   </button>
                   <input
                     ref={fileInputRef}
-                    accept=".txt,.csv,.docx,.pdf,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept=".txt,.csv,.docx,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp,image/heic,image/heif"
                     className="hidden"
+                    multiple
                     type="file"
                     onChange={handleFileChange}
                   />
                   <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    Image-only scanned PDFs are not supported yet because they need OCR.
+                    Supported formats: PDF, DOCX, TXT, CSV, JPG, PNG, WEBP, HEIC.
                   </p>
                 </div>
               ) : null}

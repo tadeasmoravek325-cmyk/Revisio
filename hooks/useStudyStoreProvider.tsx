@@ -54,6 +54,7 @@ type StudyStoreValue = {
   switchWorkspace: (id: string) => void;
   addSubject: (input: Omit<Subject, "id">) => void;
   updateSubject: (id: string, patch: Partial<Subject>) => void;
+  deleteSubject: (id: string) => void;
   importExamTopics: (topics: ImportedExamQuestionInput[]) => { subjectsCreated: number; questionsCreated: number };
   addQuestion: (input: Omit<Question, "id" | "createdAt" | "totalStudyTime" | "reviewCount">) => void;
   updateQuestion: (id: string, patch: Partial<Question>) => void;
@@ -446,6 +447,28 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
                 : subject
             )
           }))
+        );
+      },
+      deleteSubject(id: string) {
+        commitState((current) =>
+          updateWorkspaceData(current, (workspace) => {
+            const deletedQuestionIds = new Set(
+              workspace.questions
+                .filter((question) => question.subjectId === id)
+                .map((question) => question.id)
+            );
+
+            return {
+              ...workspace,
+              subjects: workspace.subjects.filter((subject) => subject.id !== id),
+              questions: workspace.questions.filter((question) => question.subjectId !== id),
+              sessions: workspace.sessions.map((session) =>
+                session.questionId && deletedQuestionIds.has(session.questionId)
+                  ? { ...session, questionId: undefined, needsReview: true }
+                  : session
+              )
+            };
+          })
         );
       },
       importExamTopics(topics: ImportedExamQuestionInput[]) {
