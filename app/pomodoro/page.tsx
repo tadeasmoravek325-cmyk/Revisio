@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { ModalOverlay } from "@/components/ui/ModalOverlay";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SmoothNumberInput } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -1340,7 +1341,7 @@ function ReviewModal({
   const allocatedTotal = selectedIds.reduce((sum, questionId) => sum + (allocations[questionId] || 0), 0);
 
   return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/50 px-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <ModalOverlay onClose={onClose}>
       <form onSubmit={handleSubmit} className="animate-enter max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1441,6 +1442,6 @@ function ReviewModal({
           <button className="btn-primary" type="submit">Save session</button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

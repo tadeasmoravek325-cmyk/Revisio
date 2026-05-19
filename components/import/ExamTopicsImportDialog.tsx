@@ -2,6 +2,7 @@
 
 import { ChangeEvent, ReactNode, useMemo, useRef, useState } from "react";
 import { useStudyStore } from "@/hooks/useStudyStore";
+import { ModalOverlay } from "@/components/ui/ModalOverlay";
 import { useToast } from "@/components/ui/ToastProvider";
 import {
   getExamTopicFileSupportMessage,
@@ -265,7 +266,7 @@ export function ExamTopicsImportDialog({
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
+        <ModalOverlay onClose={closeDialog}>
           <div className="animate-enter max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-soft dark:border-slate-700 dark:bg-slate-900">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
               <div>
@@ -481,7 +482,7 @@ export function ExamTopicsImportDialog({
               ) : null}
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
     </>
   );

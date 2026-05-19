@@ -6,6 +6,7 @@ import { SessionForm } from "@/components/study/SessionForm";
 import { SubjectPill } from "@/components/study/SubjectPill";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { ModalOverlay } from "@/components/ui/ModalOverlay";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -369,7 +370,7 @@ export default function CalendarPage() {
         ) : null}
       </div>
       {editingSession ? (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/50 px-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+        <ModalOverlay onClose={() => setEditingSessionId("")}>
           <form onSubmit={handleEditSubmit} className="animate-enter max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -448,7 +449,7 @@ export default function CalendarPage() {
               </button>
             </div>
           </form>
-        </div>
+        </ModalOverlay>
       ) : null}
       <ConfirmDialog
         open={Boolean(sessionToDelete)}

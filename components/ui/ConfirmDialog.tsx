@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { ModalOverlay } from "@/components/ui/ModalOverlay";
 
 type ConfirmDialogProps = {
   open: boolean;
@@ -24,42 +23,13 @@ export function ConfirmDialog({
   onConfirm,
   onCancel
 }: ConfirmDialogProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onCancel();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel, open]);
-
-  if (!mounted || !open) {
+  if (!open) {
     return null;
   }
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/50 px-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      onMouseDown={onCancel}
-    >
-      <div
-        className="animate-enter w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+  return (
+    <ModalOverlay onClose={onCancel}>
+      <div className="animate-enter w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
         <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">{title}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{message}</p>
         <div className="mt-5 grid grid-cols-2 gap-2">
@@ -75,7 +45,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>,
-    document.body
+    </ModalOverlay>
   );
 }
