@@ -13,6 +13,7 @@ import { Question, Settings, StudySession, StudySessionType, Subject } from "@/t
 import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 import { getSessionDate } from "@/utils/studyMetrics";
+import { formatStudyTime } from "@/utils/timeFormat";
 
 type TimerMode = "stopwatch" | "pomodoro";
 type TimerPhase = "normal" | "work" | "short_break" | "long_break";
@@ -1166,7 +1167,7 @@ function NeedsReview({
           <article key={session.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="font-black text-slate-950 dark:text-slate-50">{session.durationMinutes} min</p>
+                <p className="font-black text-slate-950 dark:text-slate-50">{formatStudyTime(session.durationMinutes)}</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   {getSessionDate(session)} · {sessionTypeLabels[session.type]}
                 </p>
@@ -1224,7 +1225,7 @@ function RecentSessions({
                     {question ? getQuestionLabel(question) : "Deleted question"}
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {session.durationMinutes} min · {sessionTypeLabels[session.type]} · {getSessionDate(session)}
+                    {formatStudyTime(session.durationMinutes)} · {sessionTypeLabels[session.type]} · {getSessionDate(session)}
                   </p>
                   {session.note ? (
                     <p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">{session.note}</p>
@@ -1318,7 +1319,7 @@ function ReviewModal({
     const total = selectedIds.reduce((sum, questionId) => sum + (resolvedAllocations[questionId] || 0), 0);
 
     if (total !== durationMinutes) {
-      setError(`Allocated minutes must equal ${durationMinutes} min.`);
+      setError(`Allocated minutes must equal ${formatStudyTime(durationMinutes)}.`);
       return;
     }
 
@@ -1347,7 +1348,7 @@ function ReviewModal({
           <div>
             <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Confirm study session</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Actual duration: {durationMinutes} min
+              Actual duration: {formatStudyTime(durationMinutes)}
             </p>
           </div>
           <button className="btn-secondary px-3" type="button" onClick={onClose}>Close</button>
@@ -1426,7 +1427,7 @@ function ReviewModal({
         </div>
 
         <p className="mt-3 text-sm font-bold text-slate-500 dark:text-slate-400">
-          Allocated: {allocatedTotal} / {durationMinutes} min
+          Allocated: {formatStudyTime(allocatedTotal)} / {formatStudyTime(durationMinutes)}
         </p>
 
         <label className="mt-3 block text-sm font-semibold text-slate-700 dark:text-slate-200">

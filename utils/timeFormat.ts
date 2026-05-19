@@ -1,5 +1,6 @@
 export function formatStudyTime(minutes?: number | null) {
-  const roundedMinutes = Math.max(0, Math.round(minutes ?? 0));
+  const resolvedMinutes = typeof minutes === "number" && Number.isFinite(minutes) ? minutes : 0;
+  const roundedMinutes = Math.max(0, Math.round(resolvedMinutes));
 
   if (roundedMinutes < 60) {
     return `${roundedMinutes} min`;

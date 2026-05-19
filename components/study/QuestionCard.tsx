@@ -23,6 +23,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { createLocalDateTime, toDateInputValue } from "@/utils/date";
+import { formatStudyTime } from "@/utils/timeFormat";
 import { SubjectPill } from "./SubjectPill";
 
 const statusOptions: QuestionStatus[] = ["unknown", "partial", "known"];
@@ -193,7 +194,7 @@ export function QuestionCard({
         </div>
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70">
           <p className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">Total time</p>
-          <p className="mt-1 text-sm font-black text-slate-900 dark:text-slate-100">{totalStudyTime} min</p>
+          <p className="mt-1 text-sm font-black text-slate-900 dark:text-slate-100">{formatStudyTime(totalStudyTime)}</p>
         </div>
       </div>
 

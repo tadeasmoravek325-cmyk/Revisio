@@ -16,6 +16,7 @@ import { StudySession, StudySessionType } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 import { getSessionDate } from "@/utils/studyMetrics";
+import { formatStudyTime } from "@/utils/timeFormat";
 
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test", "summary"];
@@ -282,7 +283,7 @@ export default function CalendarPage() {
                       ) : null}
                     </span>
                     {minutes > 0 ? (
-                      <span className="mt-2 block text-xs font-black sm:text-sm">{minutes} min</span>
+                      <span className="mt-2 block text-xs font-black sm:text-sm">{formatStudyTime(minutes)}</span>
                     ) : null}
                     {daySessions.length ? (
                       <span className="mt-1 block text-[11px] font-bold opacity-80">
@@ -308,7 +309,7 @@ export default function CalendarPage() {
                   day: "numeric"
                 })}
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{selectedMinutes} min studied</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{formatStudyTime(selectedMinutes)} studied</p>
             </div>
             <span className="badge bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-100">{selectedSessions.length} sessions</span>
           </div>
@@ -331,7 +332,7 @@ export default function CalendarPage() {
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
                       <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Duration</p>
-                      <p className="font-black text-slate-900 dark:text-slate-100">{session.durationMinutes} min</p>
+                      <p className="font-black text-slate-900 dark:text-slate-100">{formatStudyTime(session.durationMinutes)}</p>
                     </div>
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
                       <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Type</p>
