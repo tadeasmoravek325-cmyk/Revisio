@@ -69,7 +69,7 @@ export default function SignupPage() {
             className="field mt-1"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            placeholder="tadeas"
+            placeholder="username"
             required
           />
         </label>
