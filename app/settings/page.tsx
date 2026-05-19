@@ -269,7 +269,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Import exam topics</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Upload TXT, CSV, DOCX, or text-based PDF exam topics, review detected subjects and questions, then approve what should be added to the active workspace.
+              Upload PDFs, DOCX files, TXT/CSV files, screenshots, or iPhone/iPad photos, review detected subjects and questions, then approve what should be added to the active workspace.
             </p>
           </div>
           <ExamTopicsImportDialog className="btn-secondary shrink-0" />

@@ -127,11 +127,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/75 lg:hidden">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex min-w-0 items-center">
             <RevisioLogoImage
               lightSrc="/revisio-full-lockup.svg"
+              darkSrc="/revisio-logo-tight-darkmode.svg"
               alt="Revisio - Final exam preparation"
               width={126}
               height={84}
@@ -148,7 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:ml-64 lg:px-8 lg:py-8">
+      <main className="mx-auto max-w-7xl px-4 py-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:ml-64 lg:px-8 lg:py-8 lg:pb-8">
         {storageError ? (
           <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100">
             Cloud sync failed: {storageError}
@@ -157,7 +158,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="animate-enter">{children}</div>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 lg:hidden">
         <div className="mx-auto grid max-w-xl grid-cols-6 gap-1">
           {navItems.map((item) => {
             const active = pathname === item.href;
@@ -165,7 +166,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`rounded-lg px-1 py-2 text-center text-[11px] font-black transition ${
+                className={`min-h-11 rounded-lg px-1 py-2 text-center text-[11px] font-black transition ${
                   active
                     ? "bg-blue-600 text-white dark:bg-blue-500"
                     : "text-slate-500 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-400 dark:hover:bg-blue-500/10 dark:hover:text-blue-100"

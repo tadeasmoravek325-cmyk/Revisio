@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { ModalOverlay } from "@/components/ui/ModalOverlay";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -36,6 +37,7 @@ type StoredTimerState = {
   phase: TimerPhase;
   durationSeconds: number;
   remainingSeconds: number;
+  accumulatedElapsedMs?: number;
   startedAtMs?: number;
   completedWorkCount: number;
   selection: TimerSelection;
@@ -150,13 +152,23 @@ function getRemainingSeconds(timer: StoredTimerState, nowMs: number) {
   return Math.min(timer.durationSeconds, Math.max(0, timer.remainingSeconds));
 }
 
-function getStopwatchElapsedSeconds(timer: StoredTimerState, nowMs: number) {
+function getStopwatchElapsedMs(timer: StoredTimerState, nowMs: number) {
+  const accumulatedElapsedMs = Math.max(
+    0,
+    typeof timer.accumulatedElapsedMs === "number" && Number.isFinite(timer.accumulatedElapsedMs)
+      ? timer.accumulatedElapsedMs
+      : timer.remainingSeconds * 1000
+  );
+
   if (timer.status === "running" && timer.startedAtMs) {
-    const elapsed = Math.floor((nowMs - timer.startedAtMs) / 1000);
-    return Math.max(0, timer.remainingSeconds + elapsed);
+    return accumulatedElapsedMs + Math.max(0, nowMs - timer.startedAtMs);
   }
 
-  return Math.max(0, timer.remainingSeconds);
+  return accumulatedElapsedMs;
+}
+
+function getStopwatchElapsedSeconds(timer: StoredTimerState, nowMs: number) {
+  return Math.floor(getStopwatchElapsedMs(timer, nowMs) / 1000);
 }
 
 function getPomodoroElapsedSeconds(timer: StoredTimerState, nowMs: number) {
@@ -189,6 +201,7 @@ function createTimerState(
     phase: phase ?? (mode === "stopwatch" ? "normal" : "work"),
     durationSeconds,
     remainingSeconds: mode === "stopwatch" ? 0 : durationSeconds,
+    accumulatedElapsedMs: mode === "stopwatch" ? 0 : undefined,
     completedWorkCount,
     selection
   };
@@ -207,10 +220,32 @@ function isStoredTimerState(value: unknown): value is StoredTimerState {
 }
 
 function normalizeTimerState(value: StoredTimerState): StoredTimerState {
+  const mode = value.mode === "normal" ? "stopwatch" : value.mode;
+  if (mode !== "stopwatch") {
+    return {
+      ...value,
+      mode,
+      phase: value.mode === "normal" ? "normal" : value.phase
+    };
+  }
+
+  const accumulatedElapsedMs =
+    typeof value.accumulatedElapsedMs === "number" && Number.isFinite(value.accumulatedElapsedMs)
+      ? Math.max(0, value.accumulatedElapsedMs)
+      : Math.max(0, value.remainingSeconds * 1000);
+
+  const startedAtMs =
+    value.status === "running" && value.startedAtMs && value.accumulatedElapsedMs === undefined
+      ? value.startedAtMs + Math.max(0, value.remainingSeconds * 1000)
+      : value.startedAtMs;
+
   return {
     ...value,
-    mode: value.mode === "normal" ? "stopwatch" : value.mode,
-    phase: value.mode === "normal" ? "normal" : value.phase
+    mode,
+    phase: "normal",
+    remainingSeconds: Math.floor(accumulatedElapsedMs / 1000),
+    accumulatedElapsedMs,
+    startedAtMs
   };
 }
 
@@ -241,6 +276,7 @@ export default function PomodoroPage() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [normalDurationInput, setNormalDurationInput] = useState("30");
   const [pendingInterval, setPendingInterval] = useState<PendingInterval | null>(null);
+  const [showStopwatchResetConfirm, setShowStopwatchResetConfirm] = useState(false);
   const [soundStatus, setSoundStatus] = useState("");
   const [timerBundle, setTimerBundle] = useState<StoredTimerBundle>(() => ({
     activeMode: "pomodoro",
@@ -408,6 +444,7 @@ export default function PomodoroPage() {
   }, [timer.status]);
 
   const secondsLeft = getRemainingSeconds(timer, nowMs);
+  const stopwatchElapsedMs = getStopwatchElapsedMs(timer, nowMs);
   const stopwatchElapsedSeconds = getStopwatchElapsedSeconds(timer, nowMs);
   const displayTotalSeconds = timer.mode === "stopwatch" ? stopwatchElapsedSeconds : secondsLeft;
   const progress =
@@ -529,7 +566,7 @@ export default function PomodoroPage() {
     );
     window.navigator.vibrate?.(120);
 
-    const elapsedSeconds = timer.mode === "stopwatch" ? stopwatchElapsedSeconds : timer.durationSeconds;
+    const elapsedSeconds = timer.mode === "stopwatch" ? Math.floor(stopwatchElapsedMs / 1000) : timer.durationSeconds;
     const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
     const endedAtMs = timer.mode === "stopwatch"
       ? Date.now()
@@ -554,7 +591,13 @@ export default function PomodoroPage() {
     }
 
     if (timer.mode === "stopwatch") {
-      setTimer((current) => ({ ...current, status: "completed", remainingSeconds: elapsedSeconds, startedAtMs: undefined }));
+      setTimer((current) => ({
+        ...current,
+        status: "completed",
+        remainingSeconds: elapsedSeconds,
+        accumulatedElapsedMs: stopwatchElapsedMs,
+        startedAtMs: undefined
+      }));
       return;
     }
 
@@ -564,7 +607,7 @@ export default function PomodoroPage() {
     }
 
     advancePomodoroToWork();
-  }, [data.settings, playTimerEndSound, stopwatchElapsedSeconds, timer]);
+  }, [data.settings, playTimerEndSound, stopwatchElapsedMs, timer]);
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -584,10 +627,10 @@ export default function PomodoroPage() {
       completeTimer();
     }
 
-    if (timer.status === "running" && timer.mode === "stopwatch" && timer.durationSeconds > 0 && stopwatchElapsedSeconds >= timer.durationSeconds) {
+    if (timer.status === "running" && timer.mode === "stopwatch" && timer.durationSeconds > 0 && stopwatchElapsedMs >= timer.durationSeconds * 1000) {
       completeTimer();
     }
-  }, [completeTimer, secondsLeft, stopwatchElapsedSeconds, timer.durationSeconds, timer.mode, timer.status]);
+  }, [completeTimer, secondsLeft, stopwatchElapsedMs, timer.durationSeconds, timer.mode, timer.status]);
 
   function updateSelection(selection: TimerSelection) {
     setTimer((current) => ({ ...current, selection }));
@@ -618,12 +661,14 @@ export default function PomodoroPage() {
     setNowMs(Date.now());
     setTimer((current) => {
       if (current.status === "paused") {
-        const elapsedSeconds =
-          current.mode === "stopwatch" ? current.remainingSeconds : current.durationSeconds - current.remainingSeconds;
+        const startedAtMs =
+          current.mode === "stopwatch"
+            ? Date.now()
+            : Date.now() - (current.durationSeconds - current.remainingSeconds) * 1000;
         return {
           ...current,
           status: "running",
-          startedAtMs: Date.now() - elapsedSeconds * 1000
+          startedAtMs
         };
       }
 
@@ -632,26 +677,76 @@ export default function PomodoroPage() {
         status: "running",
         durationSeconds,
         remainingSeconds: current.mode === "stopwatch" ? 0 : durationSeconds,
+        accumulatedElapsedMs: current.mode === "stopwatch" ? 0 : current.accumulatedElapsedMs,
         startedAtMs: Date.now()
       };
     });
   }
 
   function pauseTimer() {
+    const now = Date.now();
     setTimer((current) => ({
       ...current,
       status: "paused",
       remainingSeconds:
         current.mode === "stopwatch"
-          ? getStopwatchElapsedSeconds(current, Date.now())
-          : getRemainingSeconds(current, Date.now()),
+          ? getStopwatchElapsedSeconds(current, now)
+          : getRemainingSeconds(current, now),
+      accumulatedElapsedMs:
+        current.mode === "stopwatch" ? getStopwatchElapsedMs(current, now) : current.accumulatedElapsedMs,
       startedAtMs: undefined
     }));
+  }
+
+  function openStopwatchSave() {
+    if (timer.mode !== "stopwatch") return;
+
+    const now = Date.now();
+    const elapsedMs = getStopwatchElapsedMs(timer, now);
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+    if (elapsedSeconds <= 0) {
+      showToast("Start the stopwatch before saving a session.", "warning");
+      return;
+    }
+
+    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const endedAt = new Date(now);
+    const startedAt = new Date(now - elapsedMs);
+    setTimer((current) => ({
+      ...current,
+      status: "paused",
+      remainingSeconds: elapsedSeconds,
+      accumulatedElapsedMs: elapsedMs,
+      startedAtMs: undefined
+    }));
+    setPendingInterval({
+      date: toDateInputValue(startedAt),
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMinutes,
+      source: "completed",
+      initialQuestionIds:
+        timer.selection.targetMode === "single" || timer.selection.targetMode === "multiple"
+          ? timer.selection.questionIds
+          : [],
+      selection: timer.selection,
+      afterAction: "reset"
+    });
+  }
+
+  function requestResetTimer() {
+    if (timer.mode === "stopwatch" && getStopwatchElapsedMs(timer, Date.now()) > 0) {
+      setShowStopwatchResetConfirm(true);
+      return;
+    }
+
+    resetTimer();
   }
 
   function resetTimer() {
     completionHandledRef.current = false;
     setPendingInterval(null);
+    setShowStopwatchResetConfirm(false);
     const durationSeconds =
       timer.mode === "stopwatch"
         ? clampPositiveInteger(Number(normalDurationInput), 30) * 60
@@ -661,6 +756,7 @@ export default function PomodoroPage() {
       status: "idle",
       durationSeconds,
       remainingSeconds: current.mode === "stopwatch" ? 0 : durationSeconds,
+      accumulatedElapsedMs: current.mode === "stopwatch" ? 0 : current.accumulatedElapsedMs,
       startedAtMs: undefined
     }));
   }
@@ -713,7 +809,7 @@ export default function PomodoroPage() {
 
           <div className="grid gap-5 lg:grid-cols-[1fr_410px]">
             <section className="panel p-4 sm:p-6">
-              <div className="mx-auto max-w-xl">
+              <div className="mx-auto max-w-xl [--timer-size:clamp(13.5rem,64vw,20rem)] sm:[--timer-size:clamp(16rem,40vw,20rem)] lg:[--timer-size:clamp(16rem,28vw,20rem)]">
                 <StudyTargetPicker
                   subjects={data.subjects}
                   questions={sortedQuestions}
@@ -721,21 +817,21 @@ export default function PomodoroPage() {
                   onChange={updateSelection}
                 />
 
-                <div className="mt-5 grid place-items-center">
-                  <div className="relative grid aspect-square w-full max-w-[320px] place-items-center">
-                    <svg className="h-full w-full -rotate-90" viewBox="0 0 260 260" aria-hidden="true">
+                <div className="mt-[clamp(1rem,4vw,1.25rem)] grid place-items-center">
+                  <div className="relative grid aspect-square w-[var(--timer-size)] max-w-full place-items-center">
+                    <svg className="h-full w-full -rotate-90 overflow-visible" viewBox="0 0 260 260" aria-hidden="true">
                       <circle cx="130" cy="130" r={radius} fill="none" stroke="currentColor" strokeWidth="16" className="text-slate-200 dark:text-slate-800" />
                       <circle cx="130" cy="130" r={radius} fill="none" stroke={isBreak ? "#d97706" : "#2563eb"} strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" strokeWidth="16" className="transition-all duration-500" />
                     </svg>
-                    <div className="absolute inset-0 grid place-items-center text-center">
-                      <div>
-                        <p className="text-sm font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
+                    <div className="absolute inset-[13%] grid place-items-center text-center">
+                      <div className="max-w-full">
+                        <p className="text-[clamp(0.65rem,calc(var(--timer-size)*0.042),0.875rem)] font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
                           {getPhaseLabel(timer.phase)}
                         </p>
-                        <p className="mt-2 text-6xl font-black tabular-nums text-slate-950 dark:text-slate-50 sm:text-7xl">
+                        <p className="mt-[clamp(0.25rem,calc(var(--timer-size)*0.025),0.5rem)] whitespace-nowrap text-[clamp(2.45rem,calc(var(--timer-size)*0.215),4.5rem)] font-black leading-none tabular-nums text-slate-950 dark:text-slate-50">
                           {displayMinutes}:{displaySeconds}
                         </p>
-                        <p className="mt-2 text-sm font-bold text-slate-500 dark:text-slate-400">
+                        <p className="mx-auto mt-[clamp(0.35rem,calc(var(--timer-size)*0.025),0.5rem)] max-w-[calc(var(--timer-size)*0.64)] text-[clamp(0.68rem,calc(var(--timer-size)*0.038),0.875rem)] font-bold leading-snug text-slate-500 dark:text-slate-400">
                           {timer.status === "running"
                             ? "Running"
                             : timer.status === "paused"
@@ -751,7 +847,7 @@ export default function PomodoroPage() {
                   </div>
                 </div>
 
-                <div className={`mt-5 grid gap-2 ${timer.mode === "pomodoro" ? "sm:grid-cols-3" : "grid-cols-2"}`}>
+                <div className={`mx-auto mt-[clamp(1rem,4vw,1.25rem)] grid max-w-[var(--timer-size)] gap-2 ${timer.mode === "pomodoro" ? "min-[420px]:grid-cols-3" : "min-[360px]:grid-cols-3"}`}>
                   <button className="btn-primary" onClick={timer.status === "running" ? pauseTimer : startOrResume}>
                     {timer.status === "running" ? "Pause" : timer.status === "paused" ? "Resume" : "Start"}
                   </button>
@@ -759,8 +855,12 @@ export default function PomodoroPage() {
                     <button className="btn-secondary" type="button" onClick={skipPomodoroInterval}>
                       Skip interval
                     </button>
-                  ) : null}
-                  <button className="btn-secondary" onClick={resetTimer}>
+                  ) : (
+                    <button className="btn-secondary" type="button" onClick={openStopwatchSave}>
+                      Save
+                    </button>
+                  )}
+                  <button className="btn-secondary" onClick={requestResetTimer}>
                     Reset
                   </button>
                 </div>
@@ -780,7 +880,7 @@ export default function PomodoroPage() {
                     onCommit={commitNormalDuration}
                   />
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 min-[420px]:grid-cols-2">
                     <NumberSetting label="Work" value={data.settings.pomodoroWorkMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroWorkMinutes", value)} />
                     <NumberSetting label="Short break" value={data.settings.pomodoroShortBreakMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroShortBreakMinutes", value)} />
                     <NumberSetting label="Long break" value={data.settings.pomodoroLongBreakMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroLongBreakMinutes", value)} />
@@ -930,6 +1030,16 @@ export default function PomodoroPage() {
               }}
             />
           ) : null}
+
+          <ConfirmDialog
+            open={showStopwatchResetConfirm}
+            title="Reset stopwatch?"
+            message="This will clear the current stopwatch time without saving a study session."
+            confirmLabel="Reset"
+            destructive
+            onCancel={() => setShowStopwatchResetConfirm(false)}
+            onConfirm={resetTimer}
+          />
         </>
       )}
     </AppShell>
@@ -1177,7 +1287,7 @@ function NeedsReview({
                   </p>
                 ) : null}
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2 min-[360px]:grid-cols-2">
                 <button className="btn-primary" onClick={() => onReview(session)}>Review</button>
                 <button className="btn-secondary" onClick={() => onDelete(session.id)}>Delete</button>
               </div>

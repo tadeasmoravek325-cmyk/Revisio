@@ -1,16 +1,9 @@
 "use client";
 
-type SupabaseModule = {
-  createClient: (url: string, anonKey: string, options?: Record<string, unknown>) => unknown;
-};
+import { createClient } from "@supabase/supabase-js";
 
 let supabaseClient: unknown;
 const cookieMaxAgeSeconds = 60 * 60 * 24 * 30;
-
-async function loadSupabaseModule(): Promise<SupabaseModule> {
-  const dynamicImport = new Function("url", "return import(url)") as (url: string) => Promise<SupabaseModule>;
-  return dynamicImport("https://esm.sh/@supabase/supabase-js@2.75.0");
-}
 
 export async function getSupabaseClient() {
   if (supabaseClient) {
@@ -24,7 +17,6 @@ export async function getSupabaseClient() {
     throw new Error("Supabase environment variables are missing.");
   }
 
-  const { createClient } = await loadSupabaseModule();
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: true,

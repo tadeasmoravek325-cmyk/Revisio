@@ -162,7 +162,7 @@ export function QuestionCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <SubjectPill subject={subject} />
-          <h2 className="mt-3 text-base font-black text-slate-950 dark:text-slate-50">
+          <h2 className="mt-3 break-words text-base font-black text-slate-950 dark:text-slate-50">
             {question.number}. {question.title}
           </h2>
           {question.notes ? <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{question.notes}</p> : null}

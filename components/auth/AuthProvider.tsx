@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 
 type AuthUser = {
@@ -21,7 +20,6 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-const publicRoutes = new Set(["/login", "/signup"]);
 
 function logAuth(message: string, details?: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
@@ -30,8 +28,6 @@ function logAuth(message: string, details?: Record<string, unknown>) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
@@ -88,23 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription?.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    if (loading) {
-      return;
-    }
-
-    const isPublicRoute = publicRoutes.has(pathname);
-
-    if (!user && !isPublicRoute) {
-      logAuth("redirect to /login", { pathname });
-      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-    }
-
-    if (user && isPublicRoute) {
-      router.replace("/");
-    }
-  }, [loading, pathname, router, user]);
 
   function clearAuthState() {
     setUser(null);

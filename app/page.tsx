@@ -107,7 +107,7 @@ export default function DashboardPage() {
               The dashboard weighs untouched questions, stale reviews, difficulty, and current status so the next session is easier to choose.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 min-[420px]:grid-cols-2">
             <div className="rounded-lg bg-blue-600 p-4 text-white dark:bg-blue-500">
               <p className="text-xs font-bold uppercase tracking-[0.12em] opacity-70">Progress</p>
               <p className="mt-2 text-3xl font-black">

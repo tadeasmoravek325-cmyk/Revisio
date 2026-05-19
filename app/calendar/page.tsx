@@ -322,7 +322,7 @@ export default function CalendarPage() {
               return (
                 <article key={session.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
                   <SubjectPill subject={subject} />
-                  <h3 className="mt-2 text-sm font-black text-slate-900 dark:text-slate-100">
+                  <h3 className="mt-2 break-words text-sm font-black text-slate-900 dark:text-slate-100">
                     {question
                       ? `${question.number}. ${question.title}`
                       : session.needsReview || !session.questionId

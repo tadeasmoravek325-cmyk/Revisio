@@ -397,7 +397,7 @@ export default function ReportsPage() {
         <ReportCard title="Study time by day" detail={periodLabel} className="min-h-[340px]">
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyData} margin={{ left: -18, right: 8, top: 8, bottom: 0 }}>
+              <AreaChart data={dailyData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dailyStudyGradient" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
@@ -406,7 +406,7 @@ export default function ReportsPage() {
                 </defs>
                 <CartesianGrid stroke={chartGridColor} vertical={false} />
                 <XAxis dataKey="day" tick={{ fill: chartTextColor, fontSize: 12 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fill: chartTextColor, fontSize: 12 }} tickFormatter={(value) => formatStudyTime(Number(value))} tickLine={false} axisLine={false} />
+                <YAxis width={58} tick={{ fill: chartTextColor, fontSize: 12 }} tickFormatter={(value) => formatStudyTime(Number(value))} tickLine={false} axisLine={false} />
                 <Tooltip formatter={(value) => formatStudyTime(Number(value))} />
                 <Area type="monotone" dataKey="minutes" stroke="#2563eb" strokeWidth={3} fill="url(#dailyStudyGradient)" />
               </AreaChart>
@@ -477,10 +477,10 @@ export default function ReportsPage() {
                 Table view
               </button>
             </div>
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <label className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 sm:block">
               Show
               <select
-                className="field ml-2 w-auto py-1.5"
+                className="field w-auto min-w-32 py-1.5 sm:ml-2"
                 value={questionLimit}
                 onChange={(event) => setQuestionLimit(event.target.value as QuestionLimit)}
               >
@@ -604,7 +604,7 @@ export default function ReportsPage() {
                   <h3 className="mt-2 text-sm font-black text-slate-950 dark:text-slate-50">
                     {question.number}. {question.title}
                   </h3>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="mt-3 grid gap-2 text-center text-xs min-[420px]:grid-cols-3">
                     <div className="rounded-md bg-white p-2 dark:bg-slate-950">
                       <p className="font-black text-slate-950 dark:text-slate-50">
                         {formatStudyTime(getTotalTimeForQuestion(filteredData, question.id))}

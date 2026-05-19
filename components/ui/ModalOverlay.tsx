@@ -9,6 +9,9 @@ type ModalOverlayProps = {
   onClose?: () => void;
 };
 
+let openModalCount = 0;
+let previousBodyOverflow = "";
+
 export function ModalOverlay({ children, className = "", onClose }: ModalOverlayProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -19,8 +22,11 @@ export function ModalOverlay({ children, className = "", onClose }: ModalOverlay
   useEffect(() => {
     if (!mounted) return;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    if (openModalCount === 0) {
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    openModalCount += 1;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -30,7 +36,11 @@ export function ModalOverlay({ children, className = "", onClose }: ModalOverlay
 
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) {
+        document.body.style.overflow = previousBodyOverflow;
+        previousBodyOverflow = "";
+      }
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [mounted, onClose]);
@@ -41,7 +51,7 @@ export function ModalOverlay({ children, className = "", onClose }: ModalOverlay
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/50 px-4 py-6 backdrop-blur-sm ${className}`}
+      className={`fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/50 px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-[calc(1.5rem+env(safe-area-inset-top))] backdrop-blur-sm ${className}`}
       role="dialog"
       aria-modal="true"
       onMouseDown={onClose}

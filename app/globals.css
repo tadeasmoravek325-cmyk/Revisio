@@ -24,11 +24,13 @@
 html {
   min-height: 100%;
   background: var(--background);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
+  overflow-x: clip;
   color: var(--foreground);
   background:
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 34rem),
@@ -110,5 +112,13 @@ textarea {
   .skeleton {
     animation: soft-pulse 1.35s ease-in-out infinite;
     @apply rounded-md bg-slate-200 dark:bg-slate-700;
+  }
+
+  @media (pointer: coarse) {
+    .field,
+    .btn-primary,
+    .btn-secondary {
+      min-height: 2.75rem;
+    }
   }
 }
