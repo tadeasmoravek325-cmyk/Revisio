@@ -8,17 +8,19 @@ import { SmoothNumberInput } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
-import { Question, StudySession, StudySessionType, Subject } from "@/types/study";
+import { Question, Settings, StudySession, StudySessionType, Subject } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 import { getSessionDate } from "@/utils/studyMetrics";
 
-type TimerMode = "normal" | "pomodoro";
+type TimerMode = "stopwatch" | "pomodoro";
 type TimerPhase = "normal" | "work" | "short_break" | "long_break";
 type TimerStatus = "idle" | "running" | "paused" | "completed";
 type TargetMode = "single" | "multiple" | "decide" | "later";
 type AllocationMode = "equal" | "manual";
 type ReviewSource = "completed" | "existing";
+type NotificationSound = Settings["notificationSound"];
+type PendingAfterAction = "reset" | "advancePomodoroAfterWork" | "none";
 
 type TimerSelection = {
   targetMode: TargetMode;
@@ -27,7 +29,7 @@ type TimerSelection = {
 };
 
 type StoredTimerState = {
-  mode: TimerMode;
+  mode: TimerMode | "normal";
   status: TimerStatus;
   phase: TimerPhase;
   durationSeconds: number;
@@ -35,6 +37,11 @@ type StoredTimerState = {
   startedAtMs?: number;
   completedWorkCount: number;
   selection: TimerSelection;
+};
+
+type StoredTimerBundle = {
+  activeMode: TimerMode;
+  timers: Record<TimerMode, StoredTimerState>;
 };
 
 type PendingInterval = {
@@ -49,37 +56,53 @@ type PendingInterval = {
   questionId?: string;
   initialQuestionIds?: string[];
   selection?: TimerSelection;
+  afterAction?: PendingAfterAction;
 };
 
 const storageKey = "revisio-active-timer-v2";
 const radius = 112;
 const circumference = 2 * Math.PI * radius;
 const sessionTypeOptions: StudySessionType[] = ["reading", "active_recall", "revision", "test", "summary"];
+const notificationSoundOptions: Array<{ value: NotificationSound; label: string }> = [
+  { value: "bell", label: "Bell" },
+  { value: "chime", label: "Soft chime" },
+  { value: "beep", label: "Digital beep" },
+  { value: "alarm", label: "Alarm" }
+];
 
-function playNotificationSound(enabled: boolean, sound: "beep" | "chime") {
-  if (!enabled) return;
-
+function getAudioContextConstructor() {
   const AudioContextCtor =
     window.AudioContext ||
     (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  return AudioContextCtor;
+}
 
-  if (!AudioContextCtor) return;
+function getSoundPattern(sound: NotificationSound) {
+  if (sound === "bell") return [784, 988, 1175, 988];
+  if (sound === "chime") return [660, 880];
+  if (sound === "alarm") return [880, 660, 880, 660];
+  return [880];
+}
 
-  const context = new AudioContextCtor();
+async function playNotificationSound(context: AudioContext, sound: NotificationSound, volume = 0.18) {
+  if (context.state === "suspended") {
+    await context.resume();
+  }
+
   const gain = context.createGain();
   gain.gain.setValueAtTime(0.001, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.5);
+  gain.gain.exponentialRampToValueAtTime(volume, context.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + (sound === "alarm" ? 1.05 : 0.7));
   gain.connect(context.destination);
 
-  const frequencies = sound === "chime" ? [660, 880] : [880];
-  frequencies.forEach((frequency, index) => {
+  getSoundPattern(sound).forEach((frequency, index) => {
     const oscillator = context.createOscillator();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(frequency, context.currentTime + index * 0.12);
+    oscillator.type = sound === "beep" || sound === "alarm" ? "square" : "sine";
+    const start = context.currentTime + index * (sound === "alarm" ? 0.18 : 0.14);
+    oscillator.frequency.setValueAtTime(frequency, start);
     oscillator.connect(gain);
-    oscillator.start(context.currentTime + index * 0.12);
-    oscillator.stop(context.currentTime + 0.48 + index * 0.12);
+    oscillator.start(start);
+    oscillator.stop(start + (sound === "alarm" ? 0.14 : 0.42));
   });
 }
 
@@ -88,7 +111,7 @@ function clampPositiveInteger(value: number, fallback: number) {
 }
 
 function getPhaseLabel(phase: TimerPhase) {
-  if (phase === "normal") return "Normal timer";
+  if (phase === "normal") return "Stopwatch";
   if (phase === "work") return "Work";
   if (phase === "long_break") return "Long break";
   return "Short break";
@@ -119,10 +142,28 @@ function getPomodoroPhaseDurationSeconds(settings: ReturnType<typeof useStudySto
 function getRemainingSeconds(timer: StoredTimerState, nowMs: number) {
   if (timer.status === "running" && timer.startedAtMs) {
     const elapsed = Math.floor((nowMs - timer.startedAtMs) / 1000);
-    return Math.max(0, timer.durationSeconds - elapsed);
+    return Math.min(timer.durationSeconds, Math.max(0, timer.durationSeconds - elapsed));
+  }
+
+  return Math.min(timer.durationSeconds, Math.max(0, timer.remainingSeconds));
+}
+
+function getStopwatchElapsedSeconds(timer: StoredTimerState, nowMs: number) {
+  if (timer.status === "running" && timer.startedAtMs) {
+    const elapsed = Math.floor((nowMs - timer.startedAtMs) / 1000);
+    return Math.max(0, timer.remainingSeconds + elapsed);
   }
 
   return Math.max(0, timer.remainingSeconds);
+}
+
+function getPomodoroElapsedSeconds(timer: StoredTimerState, nowMs: number) {
+  if (timer.status === "running" && timer.startedAtMs) {
+    const elapsed = Math.floor((nowMs - timer.startedAtMs) / 1000);
+    return Math.min(timer.durationSeconds, Math.max(0, elapsed));
+  }
+
+  return Math.min(timer.durationSeconds, Math.max(0, timer.durationSeconds - timer.remainingSeconds));
 }
 
 function createDefaultSelection(subjects: Subject[]): TimerSelection {
@@ -143,9 +184,9 @@ function createTimerState(
   return {
     mode,
     status: "idle",
-    phase: phase ?? (mode === "normal" ? "normal" : "work"),
+    phase: phase ?? (mode === "stopwatch" ? "normal" : "work"),
     durationSeconds,
-    remainingSeconds: durationSeconds,
+    remainingSeconds: mode === "stopwatch" ? 0 : durationSeconds,
     completedWorkCount,
     selection
   };
@@ -155,11 +196,32 @@ function isStoredTimerState(value: unknown): value is StoredTimerState {
   if (!value || typeof value !== "object") return false;
   const timer = value as Partial<StoredTimerState>;
   return (
-    (timer.mode === "normal" || timer.mode === "pomodoro") &&
+    (timer.mode === "normal" || timer.mode === "stopwatch" || timer.mode === "pomodoro") &&
     (timer.status === "idle" || timer.status === "running" || timer.status === "paused" || timer.status === "completed") &&
     typeof timer.durationSeconds === "number" &&
     typeof timer.remainingSeconds === "number" &&
     Boolean(timer.selection)
+  );
+}
+
+function normalizeTimerState(value: StoredTimerState): StoredTimerState {
+  return {
+    ...value,
+    mode: value.mode === "normal" ? "stopwatch" : value.mode,
+    phase: value.mode === "normal" ? "normal" : value.phase
+  };
+}
+
+function isStoredTimerBundle(value: unknown): value is StoredTimerBundle {
+  if (!value || typeof value !== "object") return false;
+  const bundle = value as Partial<StoredTimerBundle>;
+  const timers = bundle.timers;
+  return (
+    (bundle.activeMode === "stopwatch" || bundle.activeMode === "pomodoro") &&
+    Boolean(timers?.stopwatch) &&
+    Boolean(timers?.pomodoro) &&
+    isStoredTimerState(timers?.stopwatch) &&
+    isStoredTimerState(timers?.pomodoro)
   );
 }
 
@@ -168,6 +230,7 @@ export default function PomodoroPage() {
   const { showToast } = useToast();
   const restoredRef = useRef(false);
   const completionHandledRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const sortedQuestions = useMemo(
     () => sortQuestionsBySubjectAndNumber(data.questions, data.subjects),
     [data.questions, data.subjects]
@@ -176,47 +239,165 @@ export default function PomodoroPage() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [normalDurationInput, setNormalDurationInput] = useState("30");
   const [pendingInterval, setPendingInterval] = useState<PendingInterval | null>(null);
-  const [timer, setTimer] = useState<StoredTimerState>(() =>
-    createTimerState("pomodoro", 25 * 60, createDefaultSelection([]))
-  );
+  const [soundStatus, setSoundStatus] = useState("");
+  const [timerBundle, setTimerBundle] = useState<StoredTimerBundle>(() => ({
+    activeMode: "pomodoro",
+    timers: {
+      stopwatch: createTimerState("stopwatch", 30 * 60, createDefaultSelection([])),
+      pomodoro: createTimerState("pomodoro", 25 * 60, createDefaultSelection([]))
+    }
+  }));
+  const timer = timerBundle.timers[timerBundle.activeMode];
+  const setTimer = useCallback((updater: StoredTimerState | ((current: StoredTimerState) => StoredTimerState)) => {
+    setTimerBundle((current) => {
+      const currentTimer = current.timers[current.activeMode];
+      const nextTimer = typeof updater === "function" ? updater(currentTimer) : updater;
+      return {
+        ...current,
+        timers: {
+          ...current.timers,
+          [current.activeMode]: nextTimer
+        }
+      };
+    });
+  }, []);
+
+  function getTimerAudioContext() {
+    if (audioContextRef.current) {
+      return audioContextRef.current;
+    }
+
+    const AudioContextCtor = getAudioContextConstructor();
+    if (!AudioContextCtor) {
+      throw new Error("This browser does not support Web Audio notifications.");
+    }
+
+    audioContextRef.current = new AudioContextCtor();
+    return audioContextRef.current;
+  }
+
+  async function primeTimerAudio() {
+    if (!data.settings.soundEnabled) {
+      setSoundStatus("Sound notifications are disabled.");
+      return false;
+    }
+
+    try {
+      const context = getTimerAudioContext();
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+      setSoundStatus("Sound notifications are ready.");
+      return true;
+    } catch (error) {
+      setSoundStatus(error instanceof Error ? error.message : "Sound could not be prepared in this browser.");
+      return false;
+    }
+  }
+
+  async function playTimerEndSound(label = "Timer finished") {
+    if (!data.settings.soundEnabled) {
+      setSoundStatus("Sound notifications are disabled.");
+      return;
+    }
+
+    try {
+      const context = getTimerAudioContext();
+      await playNotificationSound(context, data.settings.notificationSound);
+      setSoundStatus(`${label} sound played.`);
+
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(label);
+      }
+    } catch (error) {
+      setSoundStatus(error instanceof Error ? error.message : "Sound could not be played. Try pressing Start or Test sound once.");
+      showToast("Sound could not be played. Tap Test sound once to allow audio.", "warning");
+    }
+  }
 
   useEffect(() => {
     if (!hydrated || restoredRef.current) return;
     restoredRef.current = true;
 
     const fallbackSelection = createDefaultSelection(data.subjects);
-    const fallback = createTimerState(
-      "pomodoro",
-      getPomodoroPhaseDurationSeconds(data.settings, "work"),
-      fallbackSelection
-    );
+    const fallback: StoredTimerBundle = {
+      activeMode: "pomodoro",
+      timers: {
+        stopwatch: createTimerState("stopwatch", 30 * 60, fallbackSelection),
+        pomodoro: createTimerState(
+          "pomodoro",
+          getPomodoroPhaseDurationSeconds(data.settings, "work"),
+          fallbackSelection
+        )
+      }
+    };
 
     try {
       const raw = window.localStorage.getItem(storageKey);
       const parsed = raw ? JSON.parse(raw) : null;
+      if (isStoredTimerBundle(parsed)) {
+        const stopwatch = normalizeTimerState(parsed.timers.stopwatch);
+        const pomodoro = normalizeTimerState(parsed.timers.pomodoro);
+        setTimerBundle({
+          activeMode: parsed.activeMode,
+          timers: {
+            stopwatch: {
+              ...stopwatch,
+              selection: {
+                ...fallbackSelection,
+                ...stopwatch.selection,
+                subjectId: stopwatch.selection.subjectId || fallbackSelection.subjectId,
+                questionIds: Array.isArray(stopwatch.selection.questionIds) ? stopwatch.selection.questionIds : []
+              }
+            },
+            pomodoro: {
+              ...pomodoro,
+              selection: {
+                ...fallbackSelection,
+                ...pomodoro.selection,
+                subjectId: pomodoro.selection.subjectId || fallbackSelection.subjectId,
+                questionIds: Array.isArray(pomodoro.selection.questionIds) ? pomodoro.selection.questionIds : []
+              }
+            }
+          }
+        });
+        setNormalDurationInput(String(Math.max(1, Math.round(stopwatch.durationSeconds / 60))));
+        return;
+      }
+
       if (isStoredTimerState(parsed)) {
+        const normalized = normalizeTimerState(parsed);
         const selection = {
           ...fallbackSelection,
-          ...parsed.selection,
-          subjectId: parsed.selection.subjectId || fallbackSelection.subjectId,
-          questionIds: Array.isArray(parsed.selection.questionIds) ? parsed.selection.questionIds : []
+          ...normalized.selection,
+          subjectId: normalized.selection.subjectId || fallbackSelection.subjectId,
+          questionIds: Array.isArray(normalized.selection.questionIds) ? normalized.selection.questionIds : []
         };
-        setTimer({ ...parsed, selection });
-        setNormalDurationInput(String(Math.max(1, Math.round(parsed.durationSeconds / 60))));
+        const activeMode: TimerMode = normalized.mode === "pomodoro" ? "pomodoro" : "stopwatch";
+        const nextBundle = {
+          ...fallback,
+          activeMode,
+          timers: {
+            ...fallback.timers,
+            [activeMode]: { ...normalized, mode: activeMode, selection }
+          }
+        };
+        setTimerBundle(nextBundle);
+        setNormalDurationInput(String(Math.max(1, Math.round(nextBundle.timers.stopwatch.durationSeconds / 60))));
         return;
       }
     } catch {
       window.localStorage.removeItem(storageKey);
     }
 
-    setTimer(fallback);
+    setTimerBundle(fallback);
     setNormalDurationInput("30");
   }, [data.settings, data.subjects, hydrated]);
 
   useEffect(() => {
     if (!hydrated || !restoredRef.current) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(timer));
-  }, [hydrated, timer]);
+    window.localStorage.setItem(storageKey, JSON.stringify(timerBundle));
+  }, [hydrated, timerBundle]);
 
   useEffect(() => {
     if (timer.status !== "running") return;
@@ -225,10 +406,19 @@ export default function PomodoroPage() {
   }, [timer.status]);
 
   const secondsLeft = getRemainingSeconds(timer, nowMs);
-  const progress = timer.durationSeconds ? (timer.durationSeconds - secondsLeft) / timer.durationSeconds : 0;
+  const stopwatchElapsedSeconds = getStopwatchElapsedSeconds(timer, nowMs);
+  const displayTotalSeconds = timer.mode === "stopwatch" ? stopwatchElapsedSeconds : secondsLeft;
+  const progress =
+    timer.mode === "stopwatch"
+      ? timer.durationSeconds
+        ? Math.min(1, stopwatchElapsedSeconds / timer.durationSeconds)
+        : 0
+      : timer.durationSeconds
+        ? (timer.durationSeconds - secondsLeft) / timer.durationSeconds
+        : 0;
   const dashOffset = circumference * (1 - progress);
-  const displayMinutes = Math.floor(secondsLeft / 60).toString().padStart(2, "0");
-  const displaySeconds = (secondsLeft % 60).toString().padStart(2, "0");
+  const displayMinutes = Math.floor(displayTotalSeconds / 60).toString().padStart(2, "0");
+  const displaySeconds = (displayTotalSeconds % 60).toString().padStart(2, "0");
   const isBreak = timer.phase === "short_break" || timer.phase === "long_break";
   const unassignedSessions = data.sessions.filter((session) => session.needsReview || !session.questionId);
   const reviewedSessions = data.sessions
@@ -236,18 +426,116 @@ export default function PomodoroPage() {
     .sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
     .slice(0, 8);
 
+  function advancePomodoroAfterWork() {
+    const nextCompletedCount = timer.completedWorkCount + 1;
+    const nextPhase =
+      nextCompletedCount % data.settings.pomodoroLongBreakAfter === 0 ? "long_break" : "short_break";
+    const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, nextPhase);
+    setTimer((current) => ({
+      ...current,
+      status: "idle",
+      phase: nextPhase,
+      durationSeconds: nextDuration,
+      remainingSeconds: nextDuration,
+      completedWorkCount: nextCompletedCount,
+      startedAtMs: undefined
+    }));
+  }
+
+  function advancePomodoroToWork() {
+    const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, "work");
+    setTimer((current) => ({
+      ...current,
+      status: "idle",
+      phase: "work",
+      durationSeconds: nextDuration,
+      remainingSeconds: nextDuration,
+      startedAtMs: undefined
+    }));
+  }
+
+  function finishPendingInterval(action: PendingAfterAction = pendingInterval?.afterAction ?? "none") {
+    setPendingInterval(null);
+    completionHandledRef.current = false;
+
+    if (action === "advancePomodoroAfterWork") {
+      advancePomodoroAfterWork();
+      return;
+    }
+
+    if (action === "reset") {
+      resetTimer();
+    }
+  }
+
+  function skipBreakInterval() {
+    completionHandledRef.current = false;
+    setPendingInterval(null);
+    advancePomodoroToWork();
+    showToast("Break skipped", "info");
+  }
+
+  function skipWorkInterval() {
+    const now = Date.now();
+    const elapsedSeconds = getPomodoroElapsedSeconds(timer, now);
+    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const endedAt = new Date(now);
+    const startedAt = new Date(timer.startedAtMs ?? now - elapsedSeconds * 1000);
+
+    completionHandledRef.current = true;
+    setTimer((current) => ({
+      ...current,
+      status: "paused",
+      remainingSeconds: getRemainingSeconds(current, now),
+      startedAtMs: undefined
+    }));
+    setPendingInterval({
+      date: toDateInputValue(startedAt),
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMinutes,
+      source: "completed",
+      initialQuestionIds:
+        timer.selection.targetMode === "single" || timer.selection.targetMode === "multiple"
+          ? timer.selection.questionIds
+          : [],
+      selection: timer.selection,
+      afterAction: "advancePomodoroAfterWork"
+    });
+  }
+
+  function skipPomodoroInterval() {
+    if (timer.mode !== "pomodoro") return;
+
+    if (timer.phase === "work") {
+      skipWorkInterval();
+      return;
+    }
+
+    skipBreakInterval();
+  }
+
   const completeTimer = useCallback(() => {
     if (completionHandledRef.current || timer.status !== "running") return;
     completionHandledRef.current = true;
-    playNotificationSound(data.settings.soundEnabled, data.settings.notificationSound);
+    void playTimerEndSound(
+      timer.mode === "stopwatch"
+        ? "Timer finished"
+        : timer.phase === "work"
+          ? "Pomodoro finished"
+          : "Break finished"
+    );
     window.navigator.vibrate?.(120);
 
-    const endedAtMs = (timer.startedAtMs ?? Date.now()) + timer.durationSeconds * 1000;
-    const startedAt = new Date(timer.startedAtMs ?? endedAtMs - timer.durationSeconds * 1000);
+    const elapsedSeconds = timer.mode === "stopwatch" ? stopwatchElapsedSeconds : timer.durationSeconds;
+    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const endedAtMs = timer.mode === "stopwatch"
+      ? Date.now()
+      : (timer.startedAtMs ?? Date.now()) + timer.durationSeconds * 1000;
+    const startedAt = new Date(timer.startedAtMs ?? endedAtMs - elapsedSeconds * 1000);
     const endedAt = new Date(endedAtMs);
 
-    if (timer.mode === "normal" || timer.phase === "work") {
-      const durationMinutes = Math.max(1, Math.round(timer.durationSeconds / 60));
+    if (timer.mode === "stopwatch" || timer.phase === "work") {
       setPendingInterval({
         date: toDateInputValue(startedAt),
         startedAt: startedAt.toISOString(),
@@ -258,76 +546,69 @@ export default function PomodoroPage() {
           timer.selection.targetMode === "single" || timer.selection.targetMode === "multiple"
             ? timer.selection.questionIds
             : [],
-        selection: timer.selection
+        selection: timer.selection,
+        afterAction: timer.mode === "stopwatch" ? "reset" : "none"
       });
     }
 
-    if (timer.mode === "normal") {
-      setTimer((current) => ({ ...current, status: "completed", remainingSeconds: 0, startedAtMs: undefined }));
+    if (timer.mode === "stopwatch") {
+      setTimer((current) => ({ ...current, status: "completed", remainingSeconds: elapsedSeconds, startedAtMs: undefined }));
       return;
     }
 
     if (timer.phase === "work") {
-      const nextCompletedCount = timer.completedWorkCount + 1;
-      const nextPhase =
-        nextCompletedCount % data.settings.pomodoroLongBreakAfter === 0 ? "long_break" : "short_break";
-      const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, nextPhase);
-      setTimer((current) => ({
-        ...current,
-        status: "idle",
-        phase: nextPhase,
-        durationSeconds: nextDuration,
-        remainingSeconds: nextDuration,
-        completedWorkCount: nextCompletedCount,
-        startedAtMs: undefined
-      }));
+      advancePomodoroAfterWork();
       return;
     }
 
-    const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, "work");
-    setTimer((current) => ({
-      ...current,
-      status: "idle",
-      phase: "work",
-      durationSeconds: nextDuration,
-      remainingSeconds: nextDuration,
-      startedAtMs: undefined
-    }));
-  }, [data.settings, timer]);
+    advancePomodoroToWork();
+  }, [data.settings, playTimerEndSound, stopwatchElapsedSeconds, timer]);
 
   useEffect(() => {
-    if (timer.status === "running" && secondsLeft <= 0) {
+    function handleShortcut(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.key.toLowerCase() !== "s") return;
+      if (timerBundle.activeMode !== "pomodoro") return;
+
+      event.preventDefault();
+      skipPomodoroInterval();
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [timerBundle.activeMode, timer, secondsLeft]);
+
+  useEffect(() => {
+    if (timer.status === "running" && timer.mode === "pomodoro" && secondsLeft <= 0) {
       completeTimer();
     }
-  }, [completeTimer, secondsLeft, timer.status]);
+
+    if (timer.status === "running" && timer.mode === "stopwatch" && timer.durationSeconds > 0 && stopwatchElapsedSeconds >= timer.durationSeconds) {
+      completeTimer();
+    }
+  }, [completeTimer, secondsLeft, stopwatchElapsedSeconds, timer.durationSeconds, timer.mode, timer.status]);
 
   function updateSelection(selection: TimerSelection) {
     setTimer((current) => ({ ...current, selection }));
   }
 
   function switchMode(mode: TimerMode) {
-    if (timer.mode === mode) return;
-    const durationSeconds =
-      mode === "normal"
-        ? clampPositiveInteger(Number(normalDurationInput), 30) * 60
-        : getPomodoroPhaseDurationSeconds(data.settings, "work");
-    completionHandledRef.current = false;
-    setTimer(createTimerState(mode, durationSeconds, timer.selection));
+    setTimerBundle((current) => ({ ...current, activeMode: mode }));
   }
 
   function commitNormalDuration(value: number) {
     const minutes = clampPositiveInteger(value, 30);
     setNormalDurationInput(String(minutes));
     setTimer((current) =>
-      current.mode === "normal" && current.status !== "running"
-        ? { ...current, durationSeconds: minutes * 60, remainingSeconds: minutes * 60, phase: "normal" }
+      current.mode === "stopwatch" && current.status !== "running"
+        ? { ...current, durationSeconds: minutes * 60, phase: "normal" }
         : current
     );
   }
 
   function startOrResume() {
+    void primeTimerAudio();
     const durationSeconds =
-      timer.mode === "normal"
+      timer.mode === "stopwatch"
         ? clampPositiveInteger(Number(normalDurationInput), Math.max(1, Math.round(timer.durationSeconds / 60))) * 60
         : timer.durationSeconds;
 
@@ -335,7 +616,8 @@ export default function PomodoroPage() {
     setNowMs(Date.now());
     setTimer((current) => {
       if (current.status === "paused") {
-        const elapsedSeconds = current.durationSeconds - current.remainingSeconds;
+        const elapsedSeconds =
+          current.mode === "stopwatch" ? current.remainingSeconds : current.durationSeconds - current.remainingSeconds;
         return {
           ...current,
           status: "running",
@@ -347,7 +629,7 @@ export default function PomodoroPage() {
         ...current,
         status: "running",
         durationSeconds,
-        remainingSeconds: durationSeconds,
+        remainingSeconds: current.mode === "stopwatch" ? 0 : durationSeconds,
         startedAtMs: Date.now()
       };
     });
@@ -357,7 +639,10 @@ export default function PomodoroPage() {
     setTimer((current) => ({
       ...current,
       status: "paused",
-      remainingSeconds: getRemainingSeconds(current, Date.now()),
+      remainingSeconds:
+        current.mode === "stopwatch"
+          ? getStopwatchElapsedSeconds(current, Date.now())
+          : getRemainingSeconds(current, Date.now()),
       startedAtMs: undefined
     }));
   }
@@ -366,14 +651,14 @@ export default function PomodoroPage() {
     completionHandledRef.current = false;
     setPendingInterval(null);
     const durationSeconds =
-      timer.mode === "normal"
+      timer.mode === "stopwatch"
         ? clampPositiveInteger(Number(normalDurationInput), 30) * 60
         : getPomodoroPhaseDurationSeconds(data.settings, timer.phase === "normal" ? "work" : timer.phase);
     setTimer((current) => ({
       ...current,
       status: "idle",
       durationSeconds,
-      remainingSeconds: durationSeconds,
+      remainingSeconds: current.mode === "stopwatch" ? 0 : durationSeconds,
       startedAtMs: undefined
     }));
   }
@@ -393,12 +678,6 @@ export default function PomodoroPage() {
     });
   }
 
-  function clearCompletedTimer() {
-    completionHandledRef.current = false;
-    setPendingInterval(null);
-    resetTimer();
-  }
-
   return (
     <AppShell>
       {!hydrated ? (
@@ -410,13 +689,13 @@ export default function PomodoroPage() {
           <div className="mb-5 grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1 text-sm font-bold dark:border-slate-700 dark:bg-slate-950 sm:max-w-md">
             <button
               className={`rounded-md px-3 py-2 transition ${
-                timer.mode === "normal"
+                timer.mode === "stopwatch"
                   ? "bg-blue-600 text-white dark:bg-blue-500"
                   : "text-slate-600 dark:text-slate-300"
               }`}
-              onClick={() => switchMode("normal")}
+              onClick={() => switchMode("stopwatch")}
             >
-              Normal timer
+              Stopwatch
             </button>
             <button
               className={`rounded-md px-3 py-2 transition ${
@@ -470,10 +749,15 @@ export default function PomodoroPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-2">
+                <div className={`mt-5 grid gap-2 ${timer.mode === "pomodoro" ? "sm:grid-cols-3" : "grid-cols-2"}`}>
                   <button className="btn-primary" onClick={timer.status === "running" ? pauseTimer : startOrResume}>
                     {timer.status === "running" ? "Pause" : timer.status === "paused" ? "Resume" : "Start"}
                   </button>
+                  {timer.mode === "pomodoro" ? (
+                    <button className="btn-secondary" type="button" onClick={skipPomodoroInterval}>
+                      Skip interval
+                    </button>
+                  ) : null}
                   <button className="btn-secondary" onClick={resetTimer}>
                     Reset
                   </button>
@@ -484,9 +768,9 @@ export default function PomodoroPage() {
             <section className="panel p-4 sm:p-5">
               <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">Timer settings</h2>
               <div className="mt-4 space-y-3">
-                {timer.mode === "normal" ? (
+                {timer.mode === "stopwatch" ? (
                   <SmoothNumberInput
-                    label="Duration"
+                    label="Target alert"
                     value={normalDurationInput}
                     suffix="min"
                     fallback={Math.max(1, Math.round(timer.durationSeconds / 60))}
@@ -509,12 +793,15 @@ export default function PomodoroPage() {
                     onChange={(event) =>
                       updateSettings({
                         ...data.settings,
-                        notificationSound: event.target.value as "beep" | "chime"
+                        notificationSound: event.target.value as NotificationSound
                       })
                     }
                   >
-                    <option value="beep">Beep</option>
-                    <option value="chime">Chime</option>
+                    {notificationSoundOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
@@ -526,9 +813,14 @@ export default function PomodoroPage() {
                     className="h-5 w-5 accent-blue-600"
                   />
                 </label>
-                <button className="btn-secondary w-full" onClick={() => playNotificationSound(data.settings.soundEnabled, data.settings.notificationSound)}>
+                <button className="btn-secondary w-full" onClick={() => playTimerEndSound("Test")}>
                   Test sound
                 </button>
+                {soundStatus ? (
+                  <p className="rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 dark:bg-slate-800/60 dark:text-slate-300">
+                    {soundStatus}
+                  </p>
+                ) : null}
               </div>
             </section>
           </div>
@@ -589,9 +881,13 @@ export default function PomodoroPage() {
                     : []
                   : pendingInterval.initialQuestionIds ?? []
               }
-              onClose={() => setPendingInterval(null)}
+              onClose={() => {
+                completionHandledRef.current = false;
+                setPendingInterval(null);
+              }}
               onSkip={() => {
-                clearCompletedTimer();
+                const action = pendingInterval.afterAction ?? "none";
+                finishPendingInterval(action);
                 showToast("Timer finished without logging", "info");
               }}
               onLogLater={(durationMinutes, type, note) => {
@@ -619,7 +915,7 @@ export default function PomodoroPage() {
                     note: note || "Timer session to assign later"
                   });
                 }
-                clearCompletedTimer();
+                finishPendingInterval(pendingInterval.afterAction ?? "none");
                 showToast("Session saved for later", "info");
               }}
               onSave={(sessions) => {
@@ -627,7 +923,7 @@ export default function PomodoroPage() {
                   deleteSession(pendingInterval.sessionId);
                 }
                 sessions.forEach(logSession);
-                clearCompletedTimer();
+                finishPendingInterval(pendingInterval.afterAction ?? "none");
                 showToast("Study session logged");
               }}
             />

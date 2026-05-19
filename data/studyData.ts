@@ -416,7 +416,7 @@ export const initialData: AppData = {
     pomodoroLongBreakAfter: 4,
     pomodoroBreakMinutes: 5,
     soundEnabled: true,
-    notificationSound: "beep"
+    notificationSound: "bell"
   }
 };
 

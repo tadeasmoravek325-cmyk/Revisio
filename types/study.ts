@@ -54,7 +54,7 @@ export type Settings = {
   pomodoroLongBreakAfter: number;
   pomodoroBreakMinutes: number;
   soundEnabled: boolean;
-  notificationSound: "beep" | "chime";
+  notificationSound: "bell" | "chime" | "beep" | "alarm";
 };
 
 export type AppData = {
