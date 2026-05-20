@@ -23,7 +23,7 @@ type TargetMode = "single" | "multiple" | "decide" | "later";
 type AllocationMode = "equal" | "manual";
 type ReviewSource = "completed" | "existing";
 type NotificationSound = Settings["notificationSound"];
-type PendingAfterAction = "reset" | "resetPomodoroSession" | "advancePomodoroAfterWork" | "none";
+type PendingAfterAction = "reset" | "advancePomodoroAfterWork" | "none";
 
 type TimerSelection = {
   targetMode: TargetMode;
@@ -286,7 +286,7 @@ export default function PomodoroPage() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [normalDurationInput, setNormalDurationInput] = useState("30");
   const [pendingInterval, setPendingInterval] = useState<PendingInterval | null>(null);
-  const [showPomodoroResetChoice, setShowPomodoroResetChoice] = useState(false);
+  const [showPomodoroResetConfirm, setShowPomodoroResetConfirm] = useState(false);
   const [showStopwatchResetConfirm, setShowStopwatchResetConfirm] = useState(false);
   const [soundStatus, setSoundStatus] = useState("");
   const [timerBundle, setTimerBundle] = useState<StoredTimerBundle>(() => ({
@@ -535,9 +535,6 @@ export default function PomodoroPage() {
       return;
     }
 
-    if (action === "resetPomodoroSession") {
-      resetPomodoroSession();
-    }
   }
 
   function skipBreakInterval() {
@@ -788,96 +785,18 @@ export default function PomodoroPage() {
       return;
     }
 
+    if (timer.mode === "pomodoro" && timer.phase === "work" && getPomodoroElapsedSeconds(timer, Date.now()) > 0) {
+      setShowPomodoroResetConfirm(true);
+      return;
+    }
+
     resetTimer();
-  }
-
-  function resetPomodoroSession() {
-    completionHandledRef.current = false;
-    setPendingInterval(null);
-    setShowPomodoroResetChoice(false);
-    const durationSeconds = getPomodoroPhaseDurationSeconds(data.settings, "work");
-    const selection = createDefaultSelection(data.subjects);
-
-    setTimerBundle((current) => ({
-      ...current,
-      timers: {
-        ...current.timers,
-        pomodoro: {
-          ...current.timers.pomodoro,
-          status: "idle",
-          phase: "work",
-          durationSeconds,
-          remainingSeconds: durationSeconds,
-          completedWorkCount: 0,
-          selection,
-          startedAtMs: undefined
-        }
-      }
-    }));
-    showToast("Pomodoro session reset", "info");
-  }
-
-  function openPomodoroResetReview() {
-    if (timer.mode !== "pomodoro" || timer.phase !== "work") {
-      resetPomodoroSession();
-      return;
-    }
-
-    const now = Date.now();
-    const elapsedSeconds = getPomodoroElapsedSeconds(timer, now);
-    if (elapsedSeconds <= 0) {
-      resetPomodoroSession();
-      return;
-    }
-
-    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
-    const endedAt = new Date(now);
-    const startedAt = new Date(timer.startedAtMs ?? now - elapsedSeconds * 1000);
-    completionHandledRef.current = true;
-    setShowPomodoroResetChoice(false);
-    setTimer((current) => ({
-      ...current,
-      status: "paused",
-      remainingSeconds: getRemainingSeconds(current, now),
-      startedAtMs: undefined
-    }));
-    setPendingInterval({
-      date: toDateInputValue(startedAt),
-      startedAt: startedAt.toISOString(),
-      endedAt: endedAt.toISOString(),
-      durationMinutes,
-      source: "completed",
-      initialQuestionIds:
-        timer.selection.targetMode === "single" || timer.selection.targetMode === "multiple"
-          ? timer.selection.questionIds
-          : [],
-      selection: timer.selection,
-      afterAction: "resetPomodoroSession"
-    });
-  }
-
-  function requestResetPomodoroSession() {
-    if (timer.mode !== "pomodoro") return;
-    const now = Date.now();
-    const elapsedWorkSeconds = timer.phase === "work" ? getPomodoroElapsedSeconds(timer, now) : 0;
-
-    if (elapsedWorkSeconds > 0) {
-      setTimer((current) => ({
-        ...current,
-        status: current.status === "running" ? "paused" : current.status,
-        remainingSeconds: getRemainingSeconds(current, now),
-        startedAtMs: undefined
-      }));
-      setShowPomodoroResetChoice(true);
-      return;
-    }
-
-    resetPomodoroSession();
   }
 
   function resetTimer() {
     completionHandledRef.current = false;
     setPendingInterval(null);
+    setShowPomodoroResetConfirm(false);
     setShowStopwatchResetConfirm(false);
     const durationSeconds =
       timer.mode === "stopwatch"
@@ -993,18 +912,9 @@ export default function PomodoroPage() {
                     </button>
                   )}
                   <button className="btn-secondary" onClick={requestResetTimer}>
-                    Reset
+                    Reset timer
                   </button>
                 </div>
-                {timer.mode === "pomodoro" ? (
-                  <button
-                    className="btn-secondary mx-auto mt-2 block w-full max-w-xl"
-                    type="button"
-                    onClick={requestResetPomodoroSession}
-                  >
-                    Reset session
-                  </button>
-                ) : null}
               </div>
             </section>
 
@@ -1184,13 +1094,14 @@ export default function PomodoroPage() {
             onCancel={() => setShowStopwatchResetConfirm(false)}
             onConfirm={resetTimer}
           />
-          <PomodoroResetChoiceDialog
-            open={showPomodoroResetChoice}
-            elapsedMinutes={Math.max(1, Math.round(getPomodoroElapsedSeconds(timer, nowMs) / 60))}
-            completedWorkCount={timer.completedWorkCount}
-            onCancel={() => setShowPomodoroResetChoice(false)}
-            onDiscard={resetPomodoroSession}
-            onSaveFirst={openPomodoroResetReview}
+          <ConfirmDialog
+            open={showPomodoroResetConfirm}
+            title="Reset work interval?"
+            message="This will discard the current unsaved work interval progress and restart this work interval at its full duration. Saved study sessions and daily interval progress will stay untouched."
+            confirmLabel="Discard progress"
+            destructive
+            onCancel={() => setShowPomodoroResetConfirm(false)}
+            onConfirm={resetTimer}
           />
         </>
       )}
@@ -1216,60 +1127,6 @@ function NumberSetting({ label, value, onCommit }: { label: string; value: numbe
         onCommit(nextValue);
       }}
     />
-  );
-}
-
-function PomodoroResetChoiceDialog({
-  open,
-  elapsedMinutes,
-  completedWorkCount,
-  onCancel,
-  onDiscard,
-  onSaveFirst
-}: {
-  open: boolean;
-  elapsedMinutes: number;
-  completedWorkCount: number;
-  onCancel: () => void;
-  onDiscard: () => void;
-  onSaveFirst: () => void;
-}) {
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <ModalOverlay onClose={onCancel}>
-      <div className="animate-enter w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
-          Reset Pomodoro session
-        </p>
-        <h2 className="mt-2 text-lg font-black text-slate-950 dark:text-slate-50">
-          Save current progress first?
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          The current work interval has about {formatStudyTime(elapsedMinutes)} of elapsed study time.
-          Resetting clears the active Pomodoro session, completed interval count, and selected study target.
-          Historical saved sessions stay untouched.
-        </p>
-        {completedWorkCount > 0 ? (
-          <p className="mt-3 rounded-md bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-900 dark:bg-blue-500/10 dark:text-blue-100">
-            Completed work intervals in this active session: {completedWorkCount}
-          </p>
-        ) : null}
-        <div className="mt-5 grid gap-2 sm:grid-cols-3">
-          <button className="btn-secondary" type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn-secondary" type="button" onClick={onDiscard}>
-            Discard progress
-          </button>
-          <button className="btn-primary" type="button" onClick={onSaveFirst}>
-            Save elapsed first
-          </button>
-        </div>
-      </div>
-    </ModalOverlay>
   );
 }
 
