@@ -53,6 +53,8 @@ export type Settings = {
   pomodoroLongBreakMinutes: number;
   pomodoroLongBreakAfter: number;
   pomodoroBreakMinutes: number;
+  dailyStudyTargetMinutes: number;
+  dailyPomodoroTargetIntervals: number;
   soundEnabled: boolean;
   notificationSound: "bell" | "chime" | "beep" | "alarm";
 };

@@ -82,6 +82,8 @@ function migrateWorkspace(workspace: StudyWorkspace): StudyWorkspace {
       pomodoroBreakMinutes: pomodoroShortBreakMinutes,
       pomodoroLongBreakMinutes: migratedData.settings.pomodoroLongBreakMinutes ?? 15,
       pomodoroLongBreakAfter: migratedData.settings.pomodoroLongBreakAfter ?? 4,
+      dailyStudyTargetMinutes: migratedData.settings.dailyStudyTargetMinutes ?? 120,
+      dailyPomodoroTargetIntervals: migratedData.settings.dailyPomodoroTargetIntervals ?? 6,
       notificationSound: migratedData.settings.notificationSound ?? "beep"
     }
   };

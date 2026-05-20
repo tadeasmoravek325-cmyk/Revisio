@@ -23,7 +23,7 @@ type TargetMode = "single" | "multiple" | "decide" | "later";
 type AllocationMode = "equal" | "manual";
 type ReviewSource = "completed" | "existing";
 type NotificationSound = Settings["notificationSound"];
-type PendingAfterAction = "reset" | "advancePomodoroAfterWork" | "none";
+type PendingAfterAction = "reset" | "resetPomodoroSession" | "advancePomodoroAfterWork" | "none";
 
 type TimerSelection = {
   targetMode: TargetMode;
@@ -46,6 +46,10 @@ type StoredTimerState = {
 type StoredTimerBundle = {
   activeMode: TimerMode;
   timers: Record<TimerMode, StoredTimerState>;
+  dailyPomodoroIntervals?: {
+    date: string;
+    count: number;
+  };
 };
 
 type PendingInterval = {
@@ -207,6 +211,12 @@ function createTimerState(
   };
 }
 
+function getDailyPomodoroIntervalCount(bundle: StoredTimerBundle, date: string) {
+  return bundle.dailyPomodoroIntervals?.date === date
+    ? Math.max(0, bundle.dailyPomodoroIntervals.count)
+    : 0;
+}
+
 function isStoredTimerState(value: unknown): value is StoredTimerState {
   if (!value || typeof value !== "object") return false;
   const timer = value as Partial<StoredTimerState>;
@@ -276,6 +286,7 @@ export default function PomodoroPage() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [normalDurationInput, setNormalDurationInput] = useState("30");
   const [pendingInterval, setPendingInterval] = useState<PendingInterval | null>(null);
+  const [showPomodoroResetChoice, setShowPomodoroResetChoice] = useState(false);
   const [showStopwatchResetConfirm, setShowStopwatchResetConfirm] = useState(false);
   const [soundStatus, setSoundStatus] = useState("");
   const [timerBundle, setTimerBundle] = useState<StoredTimerBundle>(() => ({
@@ -283,6 +294,10 @@ export default function PomodoroPage() {
     timers: {
       stopwatch: createTimerState("stopwatch", 30 * 60, createDefaultSelection([])),
       pomodoro: createTimerState("pomodoro", 25 * 60, createDefaultSelection([]))
+    },
+    dailyPomodoroIntervals: {
+      date: toDateInputValue(new Date()),
+      count: 0
     }
   }));
   const timer = timerBundle.timers[timerBundle.activeMode];
@@ -367,6 +382,10 @@ export default function PomodoroPage() {
           getPomodoroPhaseDurationSeconds(data.settings, "work"),
           fallbackSelection
         )
+      },
+      dailyPomodoroIntervals: {
+        date: toDateInputValue(new Date()),
+        count: 0
       }
     };
 
@@ -397,7 +416,13 @@ export default function PomodoroPage() {
                 questionIds: Array.isArray(pomodoro.selection.questionIds) ? pomodoro.selection.questionIds : []
               }
             }
-          }
+          },
+          dailyPomodoroIntervals: parsed.dailyPomodoroIntervals?.date
+            ? {
+                date: parsed.dailyPomodoroIntervals.date,
+                count: Math.max(0, Number(parsed.dailyPomodoroIntervals.count) || 0)
+              }
+            : fallback.dailyPomodoroIntervals
         });
         setNormalDurationInput(String(Math.max(1, Math.round(stopwatch.durationSeconds / 60))));
         return;
@@ -459,6 +484,9 @@ export default function PomodoroPage() {
   const displayMinutes = Math.floor(displayTotalSeconds / 60).toString().padStart(2, "0");
   const displaySeconds = (displayTotalSeconds % 60).toString().padStart(2, "0");
   const isBreak = timer.phase === "short_break" || timer.phase === "long_break";
+  const todayKey = toDateInputValue(new Date(nowMs));
+  const dailyTargetIntervals = Math.max(1, data.settings.dailyPomodoroTargetIntervals ?? 6);
+  const dailyCompletedIntervals = getDailyPomodoroIntervalCount(timerBundle, todayKey);
   const unassignedSessions = data.sessions.filter((session) => session.needsReview || !session.questionId);
   const reviewedSessions = data.sessions
     .filter((session) => !session.needsReview && session.questionId)
@@ -504,6 +532,11 @@ export default function PomodoroPage() {
 
     if (action === "reset") {
       resetTimer();
+      return;
+    }
+
+    if (action === "resetPomodoroSession") {
+      resetPomodoroSession();
     }
   }
 
@@ -602,6 +635,7 @@ export default function PomodoroPage() {
     }
 
     if (timer.phase === "work") {
+      recordCompletedPomodoroWorkInterval();
       advancePomodoroAfterWork();
       return;
     }
@@ -638,6 +672,20 @@ export default function PomodoroPage() {
 
   function switchMode(mode: TimerMode) {
     setTimerBundle((current) => ({ ...current, activeMode: mode }));
+  }
+
+  function recordCompletedPomodoroWorkInterval() {
+    const date = toDateInputValue(new Date());
+    setTimerBundle((current) => {
+      const currentCount = getDailyPomodoroIntervalCount(current, date);
+      return {
+        ...current,
+        dailyPomodoroIntervals: {
+          date,
+          count: currentCount + 1
+        }
+      };
+    });
   }
 
   function commitNormalDuration(value: number) {
@@ -743,6 +791,90 @@ export default function PomodoroPage() {
     resetTimer();
   }
 
+  function resetPomodoroSession() {
+    completionHandledRef.current = false;
+    setPendingInterval(null);
+    setShowPomodoroResetChoice(false);
+    const durationSeconds = getPomodoroPhaseDurationSeconds(data.settings, "work");
+    const selection = createDefaultSelection(data.subjects);
+
+    setTimerBundle((current) => ({
+      ...current,
+      timers: {
+        ...current.timers,
+        pomodoro: {
+          ...current.timers.pomodoro,
+          status: "idle",
+          phase: "work",
+          durationSeconds,
+          remainingSeconds: durationSeconds,
+          completedWorkCount: 0,
+          selection,
+          startedAtMs: undefined
+        }
+      }
+    }));
+    showToast("Pomodoro session reset", "info");
+  }
+
+  function openPomodoroResetReview() {
+    if (timer.mode !== "pomodoro" || timer.phase !== "work") {
+      resetPomodoroSession();
+      return;
+    }
+
+    const now = Date.now();
+    const elapsedSeconds = getPomodoroElapsedSeconds(timer, now);
+    if (elapsedSeconds <= 0) {
+      resetPomodoroSession();
+      return;
+    }
+
+    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const endedAt = new Date(now);
+    const startedAt = new Date(timer.startedAtMs ?? now - elapsedSeconds * 1000);
+    completionHandledRef.current = true;
+    setShowPomodoroResetChoice(false);
+    setTimer((current) => ({
+      ...current,
+      status: "paused",
+      remainingSeconds: getRemainingSeconds(current, now),
+      startedAtMs: undefined
+    }));
+    setPendingInterval({
+      date: toDateInputValue(startedAt),
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMinutes,
+      source: "completed",
+      initialQuestionIds:
+        timer.selection.targetMode === "single" || timer.selection.targetMode === "multiple"
+          ? timer.selection.questionIds
+          : [],
+      selection: timer.selection,
+      afterAction: "resetPomodoroSession"
+    });
+  }
+
+  function requestResetPomodoroSession() {
+    if (timer.mode !== "pomodoro") return;
+    const now = Date.now();
+    const elapsedWorkSeconds = timer.phase === "work" ? getPomodoroElapsedSeconds(timer, now) : 0;
+
+    if (elapsedWorkSeconds > 0) {
+      setTimer((current) => ({
+        ...current,
+        status: current.status === "running" ? "paused" : current.status,
+        remainingSeconds: getRemainingSeconds(current, now),
+        startedAtMs: undefined
+      }));
+      setShowPomodoroResetChoice(true);
+      return;
+    }
+
+    resetPomodoroSession();
+  }
+
   function resetTimer() {
     completionHandledRef.current = false;
     setPendingInterval(null);
@@ -761,7 +893,7 @@ export default function PomodoroPage() {
     }));
   }
 
-  function updatePomodoroSetting(key: "pomodoroWorkMinutes" | "pomodoroShortBreakMinutes" | "pomodoroLongBreakMinutes" | "pomodoroLongBreakAfter", value: number) {
+  function updatePomodoroSetting(key: "pomodoroWorkMinutes" | "pomodoroShortBreakMinutes" | "pomodoroLongBreakMinutes" | "pomodoroLongBreakAfter" | "dailyPomodoroTargetIntervals", value: number) {
     const nextValue = clampPositiveInteger(value, data.settings[key]);
     const nextSettings = {
       ...data.settings,
@@ -839,7 +971,7 @@ export default function PomodoroPage() {
                               : timer.status === "completed"
                                 ? "Completed"
                                 : timer.mode === "pomodoro"
-                                  ? `Completed work intervals: ${timer.completedWorkCount}`
+                                  ? `Daily intervals: ${dailyCompletedIntervals}/${dailyTargetIntervals}`
                                   : "Ready"}
                         </p>
                       </div>
@@ -847,7 +979,7 @@ export default function PomodoroPage() {
                   </div>
                 </div>
 
-                <div className={`mx-auto mt-[clamp(1rem,4vw,1.25rem)] grid max-w-[var(--timer-size)] gap-2 ${timer.mode === "pomodoro" ? "min-[420px]:grid-cols-3" : "min-[360px]:grid-cols-3"}`}>
+                <div className="mx-auto mt-[clamp(1rem,4vw,1.25rem)] grid w-full max-w-xl gap-2 sm:grid-cols-3">
                   <button className="btn-primary" onClick={timer.status === "running" ? pauseTimer : startOrResume}>
                     {timer.status === "running" ? "Pause" : timer.status === "paused" ? "Resume" : "Start"}
                   </button>
@@ -864,6 +996,15 @@ export default function PomodoroPage() {
                     Reset
                   </button>
                 </div>
+                {timer.mode === "pomodoro" ? (
+                  <button
+                    className="btn-secondary mx-auto mt-2 block w-full max-w-xl"
+                    type="button"
+                    onClick={requestResetPomodoroSession}
+                  >
+                    Reset session
+                  </button>
+                ) : null}
               </div>
             </section>
 
@@ -885,6 +1026,9 @@ export default function PomodoroPage() {
                     <NumberSetting label="Short break" value={data.settings.pomodoroShortBreakMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroShortBreakMinutes", value)} />
                     <NumberSetting label="Long break" value={data.settings.pomodoroLongBreakMinutes} onCommit={(value) => updatePomodoroSetting("pomodoroLongBreakMinutes", value)} />
                     <NumberSetting label="Long after" value={data.settings.pomodoroLongBreakAfter} onCommit={(value) => updatePomodoroSetting("pomodoroLongBreakAfter", value)} />
+                    <div className="min-[420px]:col-span-2">
+                      <NumberSetting label="Daily target intervals" value={dailyTargetIntervals} onCommit={(value) => updatePomodoroSetting("dailyPomodoroTargetIntervals", value)} />
+                    </div>
                   </div>
                 )}
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -1040,6 +1184,14 @@ export default function PomodoroPage() {
             onCancel={() => setShowStopwatchResetConfirm(false)}
             onConfirm={resetTimer}
           />
+          <PomodoroResetChoiceDialog
+            open={showPomodoroResetChoice}
+            elapsedMinutes={Math.max(1, Math.round(getPomodoroElapsedSeconds(timer, nowMs) / 60))}
+            completedWorkCount={timer.completedWorkCount}
+            onCancel={() => setShowPomodoroResetChoice(false)}
+            onDiscard={resetPomodoroSession}
+            onSaveFirst={openPomodoroResetReview}
+          />
         </>
       )}
     </AppShell>
@@ -1064,6 +1216,60 @@ function NumberSetting({ label, value, onCommit }: { label: string; value: numbe
         onCommit(nextValue);
       }}
     />
+  );
+}
+
+function PomodoroResetChoiceDialog({
+  open,
+  elapsedMinutes,
+  completedWorkCount,
+  onCancel,
+  onDiscard,
+  onSaveFirst
+}: {
+  open: boolean;
+  elapsedMinutes: number;
+  completedWorkCount: number;
+  onCancel: () => void;
+  onDiscard: () => void;
+  onSaveFirst: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <ModalOverlay onClose={onCancel}>
+      <div className="animate-enter w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
+          Reset Pomodoro session
+        </p>
+        <h2 className="mt-2 text-lg font-black text-slate-950 dark:text-slate-50">
+          Save current progress first?
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          The current work interval has about {formatStudyTime(elapsedMinutes)} of elapsed study time.
+          Resetting clears the active Pomodoro session, completed interval count, and selected study target.
+          Historical saved sessions stay untouched.
+        </p>
+        {completedWorkCount > 0 ? (
+          <p className="mt-3 rounded-md bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-900 dark:bg-blue-500/10 dark:text-blue-100">
+            Completed work intervals in this active session: {completedWorkCount}
+          </p>
+        ) : null}
+        <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          <button className="btn-secondary" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn-secondary" type="button" onClick={onDiscard}>
+            Discard progress
+          </button>
+          <button className="btn-primary" type="button" onClick={onSaveFirst}>
+            Save elapsed first
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
   );
 }
 
