@@ -398,7 +398,7 @@ export default function ReportsPage() {
         <MetricCard label="Studied questions" value={`${getStudiedQuestionCount(filteredData)}/${data.questions.length}`} detail={`With reviews in ${periodLabel.toLowerCase()}`} />
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <ReportCard title="Study time by day" detail={periodLabel} className="min-h-[340px]">
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -438,7 +438,7 @@ export default function ReportsPage() {
         </ReportCard>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-2">
         <ReportCard title="Study time by subject" detail="Minutes grouped by subject">
           <div style={{ height: subjectChartHeight }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -506,7 +506,7 @@ export default function ReportsPage() {
           </div>
 
           {questionView === "chart" ? (
-            <div className="overflow-x-auto pb-2">
+            <div className="max-w-full overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]">
               <div className="h-[340px]" style={{ minWidth: questionChartWidth }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={questionData} margin={{ left: -8, right: 18, top: 28, bottom: 24 }}>
@@ -537,7 +537,7 @@ export default function ReportsPage() {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-w-full overflow-x-auto">
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-xs font-black uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:text-slate-400">
@@ -581,7 +581,7 @@ export default function ReportsPage() {
         </ReportCard>
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-2">
         <ReportCard title="Most neglected questions" detail="Never studied or longest since last review">
           <div className="space-y-3">
             {neglectedQuestions.map(({ question, daysSinceLastSeen }) => {

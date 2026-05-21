@@ -16,6 +16,7 @@ import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
 import { getSessionDate } from "@/utils/studyMetrics";
 import { formatStudyTime } from "@/utils/timeFormat";
+import { getAudioContextConstructor, playTimerNotificationSound } from "@/utils/timerSound";
 
 type TimerMode = "stopwatch" | "pomodoro";
 type TimerPhase = "normal" | "work" | "short_break" | "long_break";
@@ -40,6 +41,7 @@ type StoredTimerState = {
   remainingSeconds: number;
   accumulatedElapsedMs?: number;
   startedAtMs?: number;
+  targetAlertedForSeconds?: number;
   completedWorkCount: number;
   selection: TimerSelection;
 };
@@ -78,42 +80,6 @@ const notificationSoundOptions: Array<{ value: NotificationSound; label: string 
   { value: "beep", label: "Digital beep" },
   { value: "alarm", label: "Alarm" }
 ];
-
-function getAudioContextConstructor() {
-  const AudioContextCtor =
-    window.AudioContext ||
-    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  return AudioContextCtor;
-}
-
-function getSoundPattern(sound: NotificationSound) {
-  if (sound === "bell") return [784, 988, 1175, 988];
-  if (sound === "chime") return [660, 880];
-  if (sound === "alarm") return [880, 660, 880, 660];
-  return [880];
-}
-
-async function playNotificationSound(context: AudioContext, sound: NotificationSound, volume = 0.18) {
-  if (context.state === "suspended") {
-    await context.resume();
-  }
-
-  const gain = context.createGain();
-  gain.gain.setValueAtTime(0.001, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(volume, context.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + (sound === "alarm" ? 1.05 : 0.7));
-  gain.connect(context.destination);
-
-  getSoundPattern(sound).forEach((frequency, index) => {
-    const oscillator = context.createOscillator();
-    oscillator.type = sound === "beep" || sound === "alarm" ? "square" : "sine";
-    const start = context.currentTime + index * (sound === "alarm" ? 0.18 : 0.14);
-    oscillator.frequency.setValueAtTime(frequency, start);
-    oscillator.connect(gain);
-    oscillator.start(start);
-    oscillator.stop(start + (sound === "alarm" ? 0.14 : 0.42));
-  });
-}
 
 function clampPositiveInteger(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
@@ -223,6 +189,12 @@ function getDailyPomodoroIntervalCount(bundle: StoredTimerBundle, date: string) 
     : 0;
 }
 
+function logTimerDebug(message: string, details: Record<string, unknown> = {}) {
+  if (process.env.NODE_ENV === "development") {
+    console.info(`[Revisio timer] ${message}`, details);
+  }
+}
+
 function isStoredTimerState(value: unknown): value is StoredTimerState {
   if (!value || typeof value !== "object") return false;
   const timer = value as Partial<StoredTimerState>;
@@ -283,6 +255,7 @@ export default function PomodoroPage() {
   const { showToast } = useToast();
   const restoredRef = useRef(false);
   const completionHandledRef = useRef(false);
+  const playedSoundEventsRef = useRef<Set<string>>(new Set());
   const audioContextRef = useRef<AudioContext | null>(null);
   const sortedQuestions = useMemo(
     () => sortQuestionsBySubjectAndNumber(data.questions, data.subjects),
@@ -346,29 +319,52 @@ export default function PomodoroPage() {
       if (context.state === "suspended") {
         await context.resume();
       }
+      logTimerDebug("audio unlocked", { state: context.state });
       setSoundStatus("Sound notifications are ready.");
       return true;
     } catch (error) {
+      logTimerDebug("audio unlock failed", {
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
       setSoundStatus(error instanceof Error ? error.message : "Sound could not be prepared in this browser.");
       return false;
     }
   }
 
-  async function playTimerEndSound(label = "Timer finished") {
+  async function playTimerEndSound(label = "Timer finished", eventId?: string) {
     if (!data.settings.soundEnabled) {
       setSoundStatus("Sound notifications are disabled.");
       return;
     }
 
+    if (eventId && playedSoundEventsRef.current.has(eventId)) {
+      logTimerDebug("skipped duplicate sound event", { eventId, label });
+      return;
+    }
+
+    if (eventId) {
+      playedSoundEventsRef.current.add(eventId);
+    }
+
     try {
       const context = getTimerAudioContext();
-      await playNotificationSound(context, data.settings.notificationSound);
+      logTimerDebug("sound play attempted", { eventId, label, sound: data.settings.notificationSound });
+      await playTimerNotificationSound(context, data.settings.notificationSound);
+      logTimerDebug("sound play success", { eventId, label });
       setSoundStatus(`${label} sound played.`);
 
       if ("Notification" in window && Notification.permission === "granted") {
         new Notification(label);
       }
     } catch (error) {
+      if (eventId) {
+        playedSoundEventsRef.current.delete(eventId);
+      }
+      logTimerDebug("sound play failure", {
+        eventId,
+        label,
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
       setSoundStatus(error instanceof Error ? error.message : "Sound could not be played. Try pressing Start or Test sound once.");
       showToast("Sound could not be played. Tap Test sound once to allow audio.", "warning");
     }
@@ -477,6 +473,10 @@ export default function PomodoroPage() {
   const secondsLeft = getRemainingSeconds(timer, nowMs);
   const stopwatchElapsedMs = getStopwatchElapsedMs(timer, nowMs);
   const stopwatchElapsedSeconds = getStopwatchElapsedSeconds(timer, nowMs);
+  const stopwatchTargetReached =
+    timer.mode === "stopwatch" &&
+    timer.durationSeconds > 0 &&
+    stopwatchElapsedMs >= timer.durationSeconds * 1000;
   const displayTotalSeconds = timer.mode === "stopwatch" ? stopwatchElapsedSeconds : secondsLeft;
   const progress =
     timer.mode === "stopwatch"
@@ -504,6 +504,10 @@ export default function PomodoroPage() {
     const nextPhase =
       nextCompletedCount % data.settings.pomodoroLongBreakAfter === 0 ? "long_break" : "short_break";
     const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, nextPhase);
+    void playTimerEndSound(
+      nextPhase === "long_break" ? "Long break started" : "Break started",
+      `pomodoro-phase-start:${timer.startedAtMs ?? Date.now()}:${nextCompletedCount}:${nextPhase}`
+    );
     setTimer((current) => ({
       ...current,
       status: "idle",
@@ -517,6 +521,10 @@ export default function PomodoroPage() {
 
   function advancePomodoroToWork() {
     const nextDuration = getPomodoroPhaseDurationSeconds(data.settings, "work");
+    void playTimerEndSound(
+      "Work interval started",
+      `pomodoro-phase-start:${timer.startedAtMs ?? Date.now()}:${timer.completedWorkCount}:work`
+    );
     setTimer((current) => ({
       ...current,
       status: "idle",
@@ -591,26 +599,29 @@ export default function PomodoroPage() {
   }
 
   const completeTimer = useCallback(() => {
-    if (completionHandledRef.current || timer.status !== "running") return;
+    if (completionHandledRef.current || timer.status !== "running" || timer.mode !== "pomodoro") return;
     completionHandledRef.current = true;
+    const phaseCompletedEventId = `pomodoro-phase-complete:${timer.startedAtMs ?? Date.now()}:${timer.phase}:${timer.durationSeconds}`;
+    logTimerDebug("pomodoro phase completed", {
+      phase: timer.phase,
+      durationSeconds: timer.durationSeconds,
+      eventId: phaseCompletedEventId
+    });
     void playTimerEndSound(
-      timer.mode === "stopwatch"
-        ? "Timer finished"
-        : timer.phase === "work"
-          ? "Pomodoro finished"
-          : "Break finished"
+      timer.phase === "work"
+        ? "Pomodoro finished"
+        : "Break finished",
+      phaseCompletedEventId
     );
     window.navigator.vibrate?.(120);
 
-    const elapsedSeconds = timer.mode === "stopwatch" ? Math.floor(stopwatchElapsedMs / 1000) : timer.durationSeconds;
+    const elapsedSeconds = timer.durationSeconds;
     const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
-    const endedAtMs = timer.mode === "stopwatch"
-      ? Date.now()
-      : (timer.startedAtMs ?? Date.now()) + timer.durationSeconds * 1000;
+    const endedAtMs = (timer.startedAtMs ?? Date.now()) + timer.durationSeconds * 1000;
     const startedAt = new Date(timer.startedAtMs ?? endedAtMs - elapsedSeconds * 1000);
     const endedAt = new Date(endedAtMs);
 
-    if (timer.mode === "stopwatch" || timer.phase === "work") {
+    if (timer.phase === "work") {
       setPendingInterval({
         date: toDateInputValue(startedAt),
         startedAt: startedAt.toISOString(),
@@ -622,19 +633,8 @@ export default function PomodoroPage() {
             ? timer.selection.questionIds
             : [],
         selection: timer.selection,
-        afterAction: timer.mode === "stopwatch" ? "reset" : "none"
+        afterAction: "none"
       });
-    }
-
-    if (timer.mode === "stopwatch") {
-      setTimer((current) => ({
-        ...current,
-        status: "completed",
-        remainingSeconds: elapsedSeconds,
-        accumulatedElapsedMs: stopwatchElapsedMs,
-        startedAtMs: undefined
-      }));
-      return;
     }
 
     if (timer.phase === "work") {
@@ -644,7 +644,7 @@ export default function PomodoroPage() {
     }
 
     advancePomodoroToWork();
-  }, [data.settings, playTimerEndSound, stopwatchElapsedMs, timer]);
+  }, [playTimerEndSound, timer]);
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -663,11 +663,44 @@ export default function PomodoroPage() {
     if (timer.status === "running" && timer.mode === "pomodoro" && secondsLeft <= 0) {
       completeTimer();
     }
+  }, [completeTimer, secondsLeft, timer.mode, timer.status]);
 
-    if (timer.status === "running" && timer.mode === "stopwatch" && timer.durationSeconds > 0 && stopwatchElapsedMs >= timer.durationSeconds * 1000) {
-      completeTimer();
+  useEffect(() => {
+    if (
+      timer.mode !== "stopwatch" ||
+      timer.status !== "running" ||
+      timer.durationSeconds <= 0 ||
+      stopwatchElapsedMs < timer.durationSeconds * 1000 ||
+      timer.targetAlertedForSeconds === timer.durationSeconds
+    ) {
+      return;
     }
-  }, [completeTimer, secondsLeft, stopwatchElapsedMs, timer.durationSeconds, timer.mode, timer.status]);
+
+    const eventId = `stopwatch-target:${timer.startedAtMs ?? "running"}:${timer.durationSeconds}`;
+    logTimerDebug("stopwatch target reached", {
+      eventId,
+      targetSeconds: timer.durationSeconds,
+      elapsedSeconds: Math.floor(stopwatchElapsedMs / 1000)
+    });
+    void playTimerEndSound("Stopwatch target reached", eventId);
+    setTimer((current) =>
+      current.mode === "stopwatch"
+        ? {
+            ...current,
+            targetAlertedForSeconds: current.durationSeconds
+          }
+        : current
+    );
+  }, [
+    playTimerEndSound,
+    setTimer,
+    stopwatchElapsedMs,
+    timer.durationSeconds,
+    timer.mode,
+    timer.startedAtMs,
+    timer.status,
+    timer.targetAlertedForSeconds
+  ]);
 
   function updateSelection(selection: TimerSelection) {
     setTimer((current) => ({ ...current, selection }));
@@ -696,7 +729,7 @@ export default function PomodoroPage() {
     setNormalDurationInput(String(minutes));
     setTimer((current) =>
       current.mode === "stopwatch" && current.status !== "running"
-        ? { ...current, durationSeconds: minutes * 60, phase: "normal" }
+        ? { ...current, durationSeconds: minutes * 60, phase: "normal", targetAlertedForSeconds: undefined }
         : current
     );
   }
@@ -729,6 +762,7 @@ export default function PomodoroPage() {
         durationSeconds,
         remainingSeconds: current.mode === "stopwatch" ? 0 : durationSeconds,
         accumulatedElapsedMs: current.mode === "stopwatch" ? 0 : current.accumulatedElapsedMs,
+        targetAlertedForSeconds: current.mode === "stopwatch" ? undefined : current.targetAlertedForSeconds,
         startedAtMs: Date.now()
       };
     });
@@ -814,6 +848,7 @@ export default function PomodoroPage() {
       durationSeconds,
       remainingSeconds: current.mode === "stopwatch" ? 0 : durationSeconds,
       accumulatedElapsedMs: current.mode === "stopwatch" ? 0 : current.accumulatedElapsedMs,
+      targetAlertedForSeconds: current.mode === "stopwatch" ? undefined : current.targetAlertedForSeconds,
       startedAtMs: undefined
     }));
   }
@@ -889,7 +924,9 @@ export default function PomodoroPage() {
                           {displayMinutes}:{displaySeconds}
                         </p>
                         <p className="mx-auto mt-[clamp(0.35rem,calc(var(--timer-size)*0.025),0.5rem)] max-w-[calc(var(--timer-size)*0.64)] text-[clamp(0.68rem,calc(var(--timer-size)*0.038),0.875rem)] font-bold leading-snug text-slate-500 dark:text-slate-400">
-                          {timer.status === "running"
+                          {timer.mode === "stopwatch" && stopwatchTargetReached
+                            ? "Target reached"
+                            : timer.status === "running"
                             ? "Running"
                             : timer.status === "paused"
                               ? "Paused"
