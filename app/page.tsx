@@ -127,6 +127,7 @@ export default function DashboardPage() {
     hasWorkspaces,
     hydrated,
     logSession,
+    logSessions,
     updateSettings
   } = useStudyStore();
 
@@ -269,7 +270,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-5">
-        <SessionForm subjects={data.subjects} questions={data.questions} onSubmit={logSession} />
+        <SessionForm subjects={data.subjects} questions={data.questions} onSubmit={logSession} onSubmitMany={logSessions} />
       </div>
     </AppShell>
   );

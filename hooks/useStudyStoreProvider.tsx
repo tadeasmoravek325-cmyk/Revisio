@@ -60,6 +60,7 @@ type StudyStoreValue = {
   updateQuestion: (id: string, patch: Partial<Question>) => void;
   deleteQuestion: (id: string) => void;
   logSession: (input: Omit<StudySession, "id">) => void;
+  logSessions: (inputs: Omit<StudySession, "id">[]) => void;
   updateSession: (id: string, patch: Partial<StudySession>) => void;
   deleteSession: (id: string) => void;
   updateSettings: (settings: AppData["settings"]) => void;
@@ -584,20 +585,36 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
       },
       logSession(input: Omit<StudySession, "id">) {
-        const sessionDate = getDateOnlyValue(input.date) || getDateOnlyValue(input.startedAt);
+        actions.logSessions([input]);
+      },
+      logSessions(inputs: Omit<StudySession, "id">[]) {
+        const normalizedInputs = inputs.map((input) => ({
+          ...input,
+          date: getDateOnlyValue(input.date) || getDateOnlyValue(input.startedAt),
+          id: createCloudEntityId()
+        }));
+
         commitState((current) =>
           updateWorkspaceData(current, (workspace) => ({
             ...workspace,
-            sessions: [{ ...input, date: sessionDate, id: createCloudEntityId() }, ...workspace.sessions],
-            questions: workspace.questions.map((question) =>
-              !input.needsReview && input.questionId && question.id === input.questionId
-                ? {
-                    ...question,
-                    totalStudyTime: question.totalStudyTime + input.durationMinutes,
-                    reviewCount: question.reviewCount + 1
-                  }
-                : question
-            )
+            sessions: [...normalizedInputs, ...workspace.sessions],
+            questions: workspace.questions.map((question) => {
+              const questionSessions = normalizedInputs.filter(
+                (input) => !input.needsReview && input.questionId && question.id === input.questionId
+              );
+
+              if (!questionSessions.length) {
+                return question;
+              }
+
+              return {
+                ...question,
+                totalStudyTime:
+                  question.totalStudyTime +
+                  questionSessions.reduce((sum, input) => sum + input.durationMinutes, 0),
+                reviewCount: question.reviewCount + questionSessions.length
+              };
+            })
           }))
         );
       },

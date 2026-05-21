@@ -66,7 +66,7 @@ function getSessionsForDate(sessions: StudySession[], date: string) {
 }
 
 export default function CalendarPage() {
-  const { data, deleteSession, hydrated, logSession, updateSession } = useStudyStore();
+  const { data, deleteSession, hydrated, logSession, logSessions, updateSession } = useStudyStore();
   const { showToast } = useToast();
   const today = toDateInputValue(new Date());
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
@@ -198,7 +198,7 @@ export default function CalendarPage() {
   function renderLogSessionForm() {
     return (
       <div id="calendar-log-session">
-        <SessionForm subjects={data.subjects} questions={data.questions} onSubmit={logSession} />
+        <SessionForm subjects={data.subjects} questions={data.questions} onSubmit={logSession} onSubmitMany={logSessions} />
       </div>
     );
   }

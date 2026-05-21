@@ -8,6 +8,7 @@ import { ModalOverlay } from "@/components/ui/ModalOverlay";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SmoothNumberInput } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
+import { SubjectPill } from "@/components/study/SubjectPill";
 import { sessionTypeLabels } from "@/data/studyData";
 import { useStudyStore } from "@/hooks/useStudyStore";
 import { Question, Settings, StudySession, StudySessionType, Subject } from "@/types/study";
@@ -127,6 +128,11 @@ function getPhaseLabel(phase: TimerPhase) {
 
 function getQuestionLabel(question: Question) {
   return `${question.number}. ${question.title}`;
+}
+
+function getQuestionLabelWithSubject(question: Question, subjects: Subject[]) {
+  const subject = subjects.find((item) => item.id === question.subjectId);
+  return `${subject?.abbreviation ?? subject?.name ?? "Subject"} ${question.number}: ${question.title}`;
 }
 
 function getEqualAllocations(questionIds: string[], totalMinutes: number) {
@@ -1440,6 +1446,9 @@ function ReviewModal({
   const [durationDraft, setDurationDraft] = useState(String(interval.durationMinutes));
   const [durationMinutes, setDurationMinutes] = useState(interval.durationMinutes);
   const [subjectId, setSubjectId] = useState(initialQuestion?.subjectId ?? interval.selection?.subjectId ?? subjects[0]?.id ?? "");
+  const [selectionMode, setSelectionMode] = useState<"single" | "multiple">(
+    interval.selection?.targetMode === "single" ? "single" : "multiple"
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>(initialQuestionIds);
   const [allocationMode, setAllocationMode] = useState<AllocationMode>("equal");
   const [allocations, setAllocations] = useState<Record<string, number>>(() =>
@@ -1457,6 +1466,15 @@ function ReviewModal({
   const [note, setNote] = useState(interval.note ?? "");
   const [error, setError] = useState("");
   const subjectQuestions = questions.filter((question) => question.subjectId === subjectId);
+  const selectedQuestions = selectedIds
+    .map((questionId) => questions.find((question) => question.id === questionId))
+    .filter((question): question is Question => Boolean(question));
+  const selectedQuestionsBySubject = subjects
+    .map((subject) => ({
+      subject,
+      questions: selectedQuestions.filter((question) => question.subjectId === subject.id)
+    }))
+    .filter((group) => group.questions.length > 0);
 
   useEffect(() => {
     if (allocationMode === "equal") {
@@ -1472,12 +1490,24 @@ function ReviewModal({
 
   function toggleQuestion(questionId: string) {
     setSelectedIds((current) => {
+      if (selectionMode === "single") {
+        const next = current.includes(questionId) ? [] : [questionId];
+        setError("");
+        return next;
+      }
+
       const next = current.includes(questionId)
         ? current.filter((id) => id !== questionId)
         : [...current, questionId];
       setError("");
       return next;
     });
+  }
+
+  function updateSelectionMode(mode: "single" | "multiple") {
+    setSelectionMode(mode);
+    setSelectedIds((current) => (mode === "single" ? current.slice(0, 1) : current));
+    setError("");
   }
 
   function handleSubmit(event: FormEvent) {
@@ -1549,14 +1579,11 @@ function ReviewModal({
             </select>
           </label>
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Subject
+            Subject filter
             <select
               className="field mt-1"
               value={subjectId}
-              onChange={(event) => {
-                setSubjectId(event.target.value);
-                setSelectedIds([]);
-              }}
+              onChange={(event) => setSubjectId(event.target.value)}
             >
               {subjects.map((subject) => (
                 <option key={subject.id} value={subject.id}>{subject.name}</option>
@@ -1572,16 +1599,76 @@ function ReviewModal({
           </label>
         </div>
 
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            className={selectionMode === "single" ? "btn-primary" : "btn-secondary"}
+            type="button"
+            onClick={() => updateSelectionMode("single")}
+          >
+            One question
+          </button>
+          <button
+            className={selectionMode === "multiple" ? "btn-primary" : "btn-secondary"}
+            type="button"
+            onClick={() => updateSelectionMode("multiple")}
+          >
+            Multiple questions
+          </button>
+        </div>
+
         <div className="mt-4 max-h-64 space-y-2 overflow-y-auto pr-1">
           {subjectQuestions.map((question) => (
             <div key={question.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
               <label className="flex items-start gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                <input type="checkbox" checked={selectedIds.includes(question.id)} onChange={() => toggleQuestion(question.id)} className="mt-1 accent-blue-600" />
-                <span>{getQuestionLabel(question)}</span>
+                <input
+                  type={selectionMode === "single" ? "radio" : "checkbox"}
+                  checked={selectedIds.includes(question.id)}
+                  onChange={() => toggleQuestion(question.id)}
+                  className="mt-1 accent-blue-600"
+                />
+                <span>{getQuestionLabelWithSubject(question, subjects)}</span>
               </label>
-              {selectedIds.includes(question.id) ? (
+            </div>
+          ))}
+        </div>
+
+        {selectedQuestionsBySubject.length ? (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+            <p className="text-xs font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+              Selected questions
+            </p>
+            <div className="mt-3 space-y-3">
+              {selectedQuestionsBySubject.map(({ subject, questions: groupQuestions }) => (
+                <div key={subject.id}>
+                  <SubjectPill subject={subject} />
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {groupQuestions.map((question) => (
+                      <button
+                        key={question.id}
+                        className="rounded-md bg-slate-100 px-2 py-1 text-left text-xs font-bold text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                        type="button"
+                        onClick={() => setSelectedIds((current) => current.filter((id) => id !== question.id))}
+                      >
+                        {question.number}. {question.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {selectedQuestions.length ? (
+          <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+            <p className="text-xs font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+              Minute allocation
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {selectedQuestions.map((question) => (
                 <SmoothNumberInput
-                  label="Minutes"
+                  key={question.id}
+                  label={getQuestionLabelWithSubject(question, subjects)}
                   value={allocationDrafts[question.id] ?? String(allocations[question.id] ?? 0)}
                   disabled={allocationMode === "equal"}
                   min={0}
@@ -1594,10 +1681,10 @@ function ReviewModal({
                     setAllocations((current) => ({ ...current, [question.id]: nextValue }));
                   }}
                 />
-              ) : null}
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ) : null}
 
         <p className="mt-3 text-sm font-bold text-slate-500 dark:text-slate-400">
           Allocated: {formatStudyTime(allocatedTotal)} / {formatStudyTime(durationMinutes)}

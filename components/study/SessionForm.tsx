@@ -1,25 +1,47 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { sessionTypeLabels } from "@/data/studyData";
 import { SmoothNumberInput, parsePositiveIntegerDraft } from "@/components/ui/SmoothNumberInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Question, StudySession, Subject } from "@/types/study";
 import { toDateInputValue } from "@/utils/date";
 import { sortQuestionsBySubjectAndNumber } from "@/utils/questionSorting";
+import { SubjectPill } from "./SubjectPill";
 
 type SessionFormProps = {
   subjects: Subject[];
   questions: Question[];
   onSubmit: (session: Omit<StudySession, "id">) => void;
+  onSubmitMany?: (sessions: Omit<StudySession, "id">[]) => void;
 };
 
-export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps) {
+type QuestionSelectionMode = "single" | "multiple";
+
+function getQuestionLabel(question: Question, subjects: Subject[]) {
+  const subject = subjects.find((item) => item.id === question.subjectId);
+  return `${subject?.abbreviation ?? subject?.name ?? "Subject"} ${question.number}: ${question.title}`;
+}
+
+function getEqualAllocations(questionIds: string[], totalMinutes: number) {
+  if (!questionIds.length) return {};
+  const base = Math.floor(totalMinutes / questionIds.length);
+  let remainder = totalMinutes - base * questionIds.length;
+
+  return questionIds.reduce<Record<string, number>>((allocations, questionId) => {
+    allocations[questionId] = base + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+    return allocations;
+  }, {});
+}
+
+export function SessionForm({ subjects, questions, onSubmit, onSubmitMany }: SessionFormProps) {
   const { showToast } = useToast();
   const [subjectId, setSubjectId] = useState(subjects[0]?.id ?? "");
   const [minutesInput, setMinutesInput] = useState("45");
   const [type, setType] = useState<StudySession["type"]>("active_recall");
-  const [questionId, setQuestionId] = useState("");
+  const [selectionMode, setSelectionMode] = useState<QuestionSelectionMode>("single");
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [studyDate, setStudyDate] = useState(toDateInputValue(new Date()));
   const [note, setNote] = useState("");
 
@@ -30,13 +52,57 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
     ),
     [questions, subjectId, subjects]
   );
+  const selectedQuestions = useMemo(
+    () =>
+      selectedQuestionIds
+        .map((questionId) => questions.find((question) => question.id === questionId))
+        .filter((question): question is Question => Boolean(question)),
+    [questions, selectedQuestionIds]
+  );
+  const selectedQuestionsBySubject = useMemo(
+    () =>
+      subjects
+        .map((subject) => ({
+          subject,
+          questions: selectedQuestions.filter((question) => question.subjectId === subject.id)
+        }))
+        .filter((group) => group.questions.length > 0),
+    [selectedQuestions, subjects]
+  );
+
+  useEffect(() => {
+    setSelectedQuestionIds((current) =>
+      current.filter((questionId) => questions.some((question) => question.id === questionId))
+    );
+  }, [questions]);
+
+  function toggleQuestion(questionId: string) {
+    setSelectedQuestionIds((current) => {
+      if (selectionMode === "single") {
+        return current.includes(questionId) ? [] : [questionId];
+      }
+
+      return current.includes(questionId)
+        ? current.filter((id) => id !== questionId)
+        : [...current, questionId];
+    });
+  }
+
+  function updateSelectionMode(mode: QuestionSelectionMode) {
+    setSelectionMode(mode);
+    setSelectedQuestionIds((current) => (mode === "single" ? current.slice(0, 1) : current));
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const resolvedQuestionId = questionId || subjectQuestions[0]?.id;
+    const resolvedQuestionIds = selectedQuestionIds.length
+      ? selectedQuestionIds
+      : subjectQuestions[0]?.id
+        ? [subjectQuestions[0].id]
+        : [];
     const minutes = parsePositiveIntegerDraft(minutesInput, 45);
     setMinutesInput(String(minutes));
-    if (!resolvedQuestionId || minutes < 1) {
+    if (!resolvedQuestionIds.length || minutes < 1) {
       return;
     }
 
@@ -48,17 +114,24 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
         .padStart(2, "0")}:00`
     );
     const startedAt = new Date(endedAt.getTime() - minutes * 60 * 1000);
+    const allocations = getEqualAllocations(resolvedQuestionIds, minutes);
 
-    onSubmit({
-      questionId: resolvedQuestionId,
-      date: studyDate,
-      startedAt: startedAt.toISOString(),
-      endedAt: endedAt.toISOString(),
-      durationMinutes: minutes,
-      type,
-      note: note.trim()
-    });
-    showToast("Study session logged");
+    const sessions = resolvedQuestionIds.map((questionId) => ({
+        questionId,
+        date: studyDate,
+        startedAt: startedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
+        durationMinutes: allocations[questionId] || minutes,
+        type,
+        note: note.trim()
+      }));
+
+    if (onSubmitMany) {
+      onSubmitMany(sessions);
+    } else {
+      sessions.forEach(onSubmit);
+    }
+    showToast(resolvedQuestionIds.length > 1 ? "Study sessions logged" : "Study session logged");
   }
 
   return (
@@ -71,7 +144,7 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
       ) : null}
       <div className="mt-4 space-y-3">
         <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Subject
+          Subject filter
           <select className="field mt-1" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
             {subjects.map((subject) => (
               <option key={subject.id} value={subject.id}>
@@ -80,17 +153,78 @@ export function SessionForm({ subjects, questions, onSubmit }: SessionFormProps)
             ))}
           </select>
         </label>
-        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Question
-          <select className="field mt-1" value={questionId} onChange={(e) => setQuestionId(e.target.value)}>
-            <option value="">First question in subject</option>
-            {subjectQuestions.map((question) => (
-              <option key={question.id} value={question.id}>
-                {question.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <section className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              className={selectionMode === "single" ? "btn-primary" : "btn-secondary"}
+              type="button"
+              onClick={() => updateSelectionMode("single")}
+            >
+              One question
+            </button>
+            <button
+              className={selectionMode === "multiple" ? "btn-primary" : "btn-secondary"}
+              type="button"
+              onClick={() => updateSelectionMode("multiple")}
+            >
+              Multiple questions
+            </button>
+          </div>
+
+          <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+            {!subjectQuestions.length ? (
+              <p className="rounded-md bg-white p-3 text-sm font-semibold text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+                No questions in this subject.
+              </p>
+            ) : null}
+            {subjectQuestions.map((question) => {
+              const checked = selectedQuestionIds.includes(question.id);
+              return (
+                <label
+                  key={question.id}
+                  className="flex items-start gap-2 rounded-md bg-white p-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-100 transition hover:bg-blue-50 dark:bg-slate-950 dark:text-slate-200 dark:ring-slate-800 dark:hover:bg-blue-500/10"
+                >
+                  <input
+                    type={selectionMode === "single" ? "radio" : "checkbox"}
+                    checked={checked}
+                    onChange={() => toggleQuestion(question.id)}
+                    className="mt-1 accent-blue-600"
+                  />
+                  <span>{getQuestionLabel(question, subjects)}</span>
+                </label>
+              );
+            })}
+          </div>
+
+          {selectedQuestionsBySubject.length ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                Selected questions
+              </p>
+              <div className="mt-3 space-y-3">
+                {selectedQuestionsBySubject.map(({ subject, questions: groupQuestions }) => (
+                  <div key={subject.id}>
+                    <SubjectPill subject={subject} />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {groupQuestions.map((question) => (
+                        <button
+                          key={question.id}
+                          className="rounded-md bg-slate-100 px-2 py-1 text-left text-xs font-bold text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                          type="button"
+                          onClick={() =>
+                            setSelectedQuestionIds((current) => current.filter((id) => id !== question.id))
+                          }
+                        >
+                          {question.number}. {question.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
         <div className="grid items-start gap-3 sm:grid-cols-3">
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
             Date
