@@ -344,6 +344,11 @@ export default function ReportsPage() {
       ? allQuestionData
       : allQuestionData.slice(0, Number(questionLimit));
   const questionChartWidth = Math.max(520, questionData.length * 72);
+  const subjectChartHeight = Math.max(320, subjectData.length * 38);
+  const subjectAxisWidth = Math.min(
+    86,
+    Math.max(54, Math.max(...subjectData.map((item) => item.abbreviation.length), 2) * 12)
+  );
 
   const neglectedQuestions = getNeglectedQuestions(data.questions, data.subjects, (questionId) =>
     getDaysSinceLastSeen(filteredData, questionId)
@@ -435,12 +440,21 @@ export default function ReportsPage() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <ReportCard title="Study time by subject" detail="Minutes grouped by subject">
-          <div className="h-[320px]">
+          <div style={{ height: subjectChartHeight }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={subjectData} layout="vertical" margin={{ left: 0, right: 42, top: 4, bottom: 4 }}>
                 <CartesianGrid stroke={chartGridColor} horizontal={false} />
                 <XAxis type="number" tick={{ fill: chartTextColor, fontSize: 13 }} tickFormatter={(value) => formatStudyTime(Number(value))} tickLine={false} axisLine={false} />
-                <YAxis dataKey="abbreviation" type="category" width={54} tick={{ fill: chartTextColor, fontSize: 14, fontWeight: 800 }} tickLine={false} axisLine={false} />
+                <YAxis
+                  dataKey="abbreviation"
+                  type="category"
+                  width={subjectAxisWidth}
+                  interval={0}
+                  minTickGap={0}
+                  tick={{ fill: chartTextColor, fontSize: 14, fontWeight: 800 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
                 <Tooltip content={<SubjectStudyTooltip />} />
                 <Bar dataKey="minutes" radius={[0, 8, 8, 0]}>
                   <LabelList dataKey="minutes" position="right" formatter={(value) => formatStudyTime(Number(value))} fill={chartTextColor} fontSize={13} fontWeight={800} />

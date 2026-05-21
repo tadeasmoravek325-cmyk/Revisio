@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { SessionForm } from "@/components/study/SessionForm";
 import { SubjectPill } from "@/components/study/SubjectPill";
@@ -72,8 +72,6 @@ export default function CalendarPage() {
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(today);
   const [showLogSession, setShowLogSession] = useState(false);
-  const [shouldSpanLogSession, setShouldSpanLogSession] = useState(true);
-  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState("");
   const [deleteSessionId, setDeleteSessionId] = useState("");
   const [editSubjectId, setEditSubjectId] = useState("");
@@ -82,8 +80,6 @@ export default function CalendarPage() {
   const [editDurationInput, setEditDurationInput] = useState("25");
   const [editType, setEditType] = useState<StudySessionType>("active_recall");
   const [editNote, setEditNote] = useState("");
-  const calendarRef = useRef<HTMLElement | null>(null);
-  const sidebarRef = useRef<HTMLElement | null>(null);
 
   const calendarDays = useMemo(() => getCalendarDays(visibleMonth), [visibleMonth]);
   const monthKey = getMonthKey(visibleMonth);
@@ -96,45 +92,6 @@ export default function CalendarPage() {
   const editingSession = data.sessions.find((session) => session.id === editingSessionId);
   const sessionToDelete = data.sessions.find((session) => session.id === deleteSessionId);
   const editSubjectQuestions = sortedQuestions.filter((question) => question.subjectId === editSubjectId);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(min-width: 1024px)");
-    const updateLayout = () => setIsDesktopLayout(mediaQuery.matches);
-
-    updateLayout();
-    mediaQuery.addEventListener("change", updateLayout);
-    return () => mediaQuery.removeEventListener("change", updateLayout);
-  }, []);
-
-  useEffect(() => {
-    const calendarElement = calendarRef.current;
-    const sidebarElement = sidebarRef.current;
-
-    if (!calendarElement || !sidebarElement) {
-      return;
-    }
-
-    const measuredCalendarElement = calendarElement;
-    const measuredSidebarElement = sidebarElement;
-
-    function updatePlacement() {
-      const calendarHeight = measuredCalendarElement.getBoundingClientRect().height;
-      const sidebarHeight = measuredSidebarElement.getBoundingClientRect().height;
-      setShouldSpanLogSession(sidebarHeight <= calendarHeight + 1);
-    }
-
-    updatePlacement();
-
-    const observer = new ResizeObserver(updatePlacement);
-    observer.observe(measuredCalendarElement);
-    observer.observe(measuredSidebarElement);
-    window.addEventListener("resize", updatePlacement);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updatePlacement);
-    };
-  }, [selectedSessions.length, showLogSession]);
 
   function moveMonth(delta: number) {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
@@ -231,9 +188,8 @@ export default function CalendarPage() {
         </button>
       </PageHeader>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 space-y-5">
-          <section ref={calendarRef} className="panel overflow-hidden">
+      <div className="space-y-5">
+          <section className="panel overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:p-5">
               <div>
                 <h2 className="text-xl font-black text-slate-950 dark:text-slate-50">{getMonthTitle(visibleMonth)}</h2>
@@ -296,10 +252,7 @@ export default function CalendarPage() {
             </div>
           </section>
 
-          {showLogSession && isDesktopLayout && !shouldSpanLogSession ? renderLogSessionForm() : null}
-        </div>
-
-        <aside ref={sidebarRef} className="panel self-start p-4 sm:p-5">
+        <section className="panel p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-black text-slate-950 dark:text-slate-50">
@@ -314,7 +267,7 @@ export default function CalendarPage() {
             <span className="badge bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-100">{selectedSessions.length} sessions</span>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {selectedSessions.map((session) => {
               const question = data.questions.find((item) => item.id === session.questionId);
               const subject = data.subjects.find((item) => item.id === question?.subjectId);
@@ -362,13 +315,9 @@ export default function CalendarPage() {
               </div>
             ) : null}
           </div>
-        </aside>
+        </section>
 
-        {showLogSession && (!isDesktopLayout || shouldSpanLogSession) ? (
-          <div className={isDesktopLayout && shouldSpanLogSession ? "lg:col-span-2" : ""}>
-            {renderLogSessionForm()}
-          </div>
-        ) : null}
+        {showLogSession ? renderLogSessionForm() : null}
       </div>
       {editingSession ? (
         <ModalOverlay onClose={() => setEditingSessionId("")}>
